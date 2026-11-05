@@ -101,7 +101,7 @@ img{display:block}
 /* Page padding */
 .page-content{padding:16px;width:100%}
 .ftip{position:relative;cursor:help;border-bottom:1px dotted currentColor;outline:none;}
-.ftip .ftip-b{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#111;color:#fff;border:1px solid #444;border-radius:8px;padding:7px 10px;font-size:11px;font-weight:600;text-transform:none;letter-spacing:0;white-space:nowrap;z-index:60;box-shadow:0 4px 14px rgba(0,0,0,.5);}
+.ftip .ftip-b{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#111;color:#fff;border:1px solid #444;border-radius:8px;padding:7px 10px;font-size:11px;font-weight:600;text-transform:none;letter-spacing:0;white-space:normal;width:250px;text-align:left;line-height:1.5;z-index:60;box-shadow:0 4px 14px rgba(0,0,0,.5);}
 .ftip:hover .ftip-b,.ftip:focus .ftip-b{display:block;}
 </style>
 </head>
@@ -6294,7 +6294,7 @@ function svgGauge(forme,histLabel){
     <path d="${ap(36,0,r,ir)}"    fill="var(--alert-ok)"/>
     <circle cx="${cx}" cy="${cy}" r="${ir}" fill="#111"/>
     <text x="${cx}" y="${cy-6}" text-anchor="middle" font-size="20" font-weight="900" fill="${sc}">${pos}%</text>
-    <text x="${cx}" y="${cy+10}" text-anchor="middle" font-size="8" fill="#555">état de forme<title>100 = total de 5 (tout à 1) · 0 = total de 35 (tout à 7)</title></text>
+    <text x="${cx}" y="${cy+10}" text-anchor="middle" font-size="8" fill="#555">état de forme<title>Forme sur 100 : 100 = tout va bien, 0 = tout va mal. Vert 60+ en forme · Jaune 45-59 à surveiller · Orange 30-44 fatigué · Rouge <30 en alerte. La couleur peut aussi se dégrader si le joueur va nettement moins bien que d'habitude.</title></text>
     <polygon points="${nx},${ny} ${b1x},${b1y} ${b2x},${b2y}" fill="#fff" opacity="0.97"/>
     <circle cx="${cx}" cy="${cy}" r="7" fill="#ccc" stroke="#444" stroke-width="1"/>
     <text x="5" y="${H-2}" text-anchor="start" font-size="8" fill="var(--alert-crit)" font-weight="700">Mauvais</text>
@@ -6553,7 +6553,7 @@ function wellnessPlayerCardHTML(a){
         </div>
         <div style="display:inline-flex;align-items:center;gap:5px;background:${sm.color}22;border:1px solid ${sm.color};color:${sm.color};font-size:10px;font-weight:800;padding:4px 10px;border-radius:12px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">${sm.emoji} ${status}</div>
         <div style="display:flex;gap:6px;">
-          ${statBox(`<span class="ftip" tabindex="0">Forme<span class="ftip-b">100 = total de 5 (tout à 1) · 0 = total de 35 (tout à 7)</span></span>`,`<span style="color:${sm.color}">${Math.round(m.forme)}</span><span style="font-size:10px;color:var(--text-muted);"> /100</span>`,'')}
+          ${statBox(`<span class="ftip" tabindex="0">Forme<span class="ftip-b"><b>Forme sur 100</b><br>100 = tout va bien · 0 = tout va mal<br><span style="color:#44cc44">●</span> Vert : en forme (60 et +)<br><span style="color:#ffcc00">●</span> Jaune : à surveiller (45 à 59)<br><span style="color:#ff9900">●</span> Orange : fatigué (30 à 44)<br><span style="color:#cc0000">●</span> Rouge : en alerte (moins de 30)<br><i>La couleur peut aussi se dégrader si le joueur va nettement moins bien que d'habitude, même avec un bon chiffre.</i></span></span>`,`<span style="color:${sm.color}">${Math.round(m.forme)}</span><span style="font-size:10px;color:var(--text-muted);"> /100</span>`,'')}
           ${statBox('vs 21j',m.ecart21!==null?`<span style="color:${ecartColor}">${m.ecart21>0?'+':''}${Math.round(m.ecart21)}%</span>`:'<span style="color:var(--text-muted);">—</span>',m.avg21!==null?`${arrow21} ${m.avg21.toFixed(1)}`:'insuf.')}
           ${statBox('vs 3j',m.var3!==null?`<span style="color:${varColor}">${m.var3>0?'+':''}${Math.round(m.var3)}%</span>`:'<span style="color:var(--text-muted);">—</span>',m.avg3!==null?`${arrow3} ${m.avg3.toFixed(1)}`:'insuf.')}
         </div>
@@ -6646,7 +6646,7 @@ function wTabStaff(assessments){
         ${a.entry.remarque?`<div style="font-size:10px;color:var(--ink-soft);margin-top:2px;">💬 ${a.entry.remarque}</div>`:''}
       </div>
       <div style="text-align:right;">
-        <div style="font-size:13px;font-weight:800;color:${sm.color};" title="100 = total de 5 (tout à 1) · 0 = total de 35 (tout à 7)">${Math.round(a.m.forme)}%</div>
+        <div style="font-size:13px;font-weight:800;color:${sm.color};" title="Forme sur 100 : 100 = tout va bien, 0 = tout va mal. Vert 60+ en forme · Jaune 45-59 à surveiller · Orange 30-44 fatigué · Rouge <30 en alerte. La couleur peut aussi se dégrader si le joueur va nettement moins bien que d'habitude.">${Math.round(a.m.forme)}%</div>
         <div style="font-size:9px;color:var(--text-muted);">${a.persistance}j</div>
       </div>
     </div>`;
