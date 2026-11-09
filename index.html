@@ -8307,11 +8307,20 @@ function _imgToPng(src,maxPx){
   });
 }
 // Graphique de disponibilité dessiné directement sur un canvas (PNG pour Word)
-function _availChartPng(weeklyAvail){
+async function _availChartPng(weeklyAvail){
   if(!weeklyAvail||!weeklyAvail.length)return null;
-  const S=2, W=900, H=260, c=document.createElement('canvas');c.width=W*S;c.height=H*S;
+  // Logos des adversaires (semaines de match), chargés à l'avance
+  const logos={};
+  for(const w of weeklyAvail){
+    if(!w.opponent||logos[w.opponent]!==undefined)continue;
+    const src=opponentLogos[oppKey(w.opponent)];
+    logos[w.opponent]=src?await new Promise(r=>{const im=new Image();im.onload=()=>r(im);im.onerror=()=>r(null);im.src=src;}):null;
+  }
+  const hasOpp=weeklyAvail.some(w=>w.opponent);
+  const top=hasOpp?60:0;
+  const S=2, W=900, H=260+top, c=document.createElement('canvas');c.width=W*S;c.height=H*S;
   const g=c.getContext('2d');g.scale(S,S);g.fillStyle='#fff';g.fillRect(0,0,W,H);
-  const n=weeklyAvail.length, L=50, R=W-20, X=i=>n===1?(L+R)/2:L+i*(R-L)/(n-1), Y=v=>215-v*1.75;
+  const n=weeklyAvail.length, L=50, R=W-20, X=i=>n===1?(L+R)/2:L+i*(R-L)/(n-1), Y=v=>215+top-v*1.75;
   g.font='12px Arial';g.textAlign='right';
   [0,25,50,75,100].forEach(v=>{g.strokeStyle='#e6e7eb';g.lineWidth=1;g.beginPath();g.moveTo(L-8,Y(v));g.lineTo(R,Y(v));g.stroke();g.fillStyle='#999';g.fillText(v+'%',L-12,Y(v)+4);});
   g.strokeStyle='#C8102E';g.lineWidth=2.5;g.beginPath();weeklyAvail.forEach((w,i)=>{i?g.lineTo(X(i),Y(w.pct)):g.moveTo(X(i),Y(w.pct));});g.stroke();
@@ -8321,7 +8330,12 @@ function _availChartPng(weeklyAvail){
     g.fillStyle=w.pct>=80?'#22a559':w.pct>=60?'#e6791a':'#C8102E';
     g.beginPath();g.arc(X(i),Y(w.pct),6,0,Math.PI*2);g.fill();g.strokeStyle='#fff';g.lineWidth=2;g.stroke();
     g.fillStyle='#111';g.font='bold 12px Arial';g.fillText(w.pctDisplay+'%',X(i),Y(w.pct)-12);
-    if(i%every===0||i===n-1){g.fillStyle='#888';g.font='11px Arial';g.fillText(w.label,X(i),248);}
+    if(i%every===0||i===n-1){g.fillStyle='#888';g.font='11px Arial';g.fillText(w.label,X(i),248+top);}
+    if(w.opponent){
+      const sz=36, cx=X(i), cy=Y(w.pct)-30-sz/2, im=logos[w.opponent];
+      if(im){const r=Math.min(sz/im.naturalWidth,sz/im.naturalHeight), iw=im.naturalWidth*r, ih=im.naturalHeight*r;g.drawImage(im,cx-iw/2,cy-ih/2,iw,ih);}
+      else{g.fillStyle='#ececec';g.beginPath();g.arc(cx,cy,sz/2,0,Math.PI*2);g.fill();g.strokeStyle='#c8c8c8';g.lineWidth=1.5;g.stroke();g.fillStyle='#666';g.font='bold 12px Arial';g.textBaseline='middle';g.fillText(oppInitials(w.opponent),cx,cy+1);g.textBaseline='alphabetic';}
+    }
   });
   return{bytes:_dataUrlBytes(c.toDataURL('image/png')),w:W*S,h:H*S};
 }
@@ -8382,7 +8396,7 @@ async function generateInjuryReportDocx(){
 
   // Images
   const logo=await _imgToPng(customLogo||DEFAULT_CLUB_LOGO,400);
-  const chart=_availChartPng(weeklyAvail);
+  const chart=await _availChartPng(weeklyAvail);
   // Match(s) de la semaine ; à défaut, le(s) match(s) de la semaine suivante
   const wkKey=dateToWeekStart(today);
   let matchTitle='Match de la semaine', matches=getMatchesForWeek(wkKey,catName);
@@ -8487,7 +8501,7 @@ async function generateInjuryReportDocx(){
   if(chart){
     body+=SUB('Disponibilité semaine par semaine');
     body+=par(img(chart,17),{align:'center',after:40});
-    body+=P("% de joueurs aptes = (effectif − indisponibles − réathlétisation) / effectif. Vert ≥ 80 % · orange 60-79 % · rouge < 60 %.",{sz:15,color:MUT,after:120});
+    body+=P("% de joueurs aptes = (effectif − indisponibles − réathlétisation) / effectif. Vert ≥ 80 % · orange 60-79 % · rouge < 60 %."+(weeklyAvail.some(w=>w.opponent)?' Logo au-dessus d\'un point = adversaire de la semaine.':''),{sz:15,color:MUT,after:120});
   }
   body+=SUB('Ce mois-ci — '+monthLabel);
   body+=tiles([
