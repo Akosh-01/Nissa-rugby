@@ -8277,6 +8277,323 @@ function generateInjuryReport(){
   w.document.close();
 }
 
+// ═══════════════ RAPPORT BLESSURES — VERSION WORD (.docx) ═══════════════
+// Généré entièrement dans le navigateur (ZIP « stocké » + XML Office), sans service extérieur.
+const _crcTable=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function _crc32(u8){let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=_crcTable[(c^u8[i])&0xFF]^(c>>>8);return(c^0xFFFFFFFF)>>>0;}
+function _zipStore(files){ // files: [{name, data:Uint8Array}]
+  const enc=new TextEncoder(), parts=[], central=[];let offset=0;
+  const u16=v=>[v&255,(v>>>8)&255], u32=v=>[v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];
+  files.forEach(f=>{
+    const nm=enc.encode(f.name), crc=_crc32(f.data), sz=f.data.length;
+    const head=new Uint8Array([...u32(0x04034b50),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(sz),...u32(sz),...u16(nm.length),...u16(0)]);
+    parts.push(head,nm,f.data);
+    central.push(new Uint8Array([...u32(0x02014b50),...u16(20),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(sz),...u32(sz),...u16(nm.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(offset)]),nm);
+    offset+=head.length+nm.length+sz;
+  });
+  const cdSize=central.reduce((a,b)=>a+b.length,0);
+  const end=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(files.length),...u16(files.length),...u32(cdSize),...u32(offset),...u16(0)]);
+  const all=[...parts,...central,end], out=new Uint8Array(all.reduce((a,b)=>a+b.length,0));
+  let p=0;all.forEach(b=>{out.set(b,p);p+=b.length;});
+  return out;
+}
+function _dataUrlBytes(url){const b=atob(url.split(',')[1]);const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
+function _imgToPng(src,maxPx){
+  return new Promise(res=>{
+    const im=new Image();
+    im.onload=()=>{try{const r=Math.min(1,maxPx/Math.max(im.naturalWidth,im.naturalHeight));const c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.naturalWidth*r));c.height=Math.max(1,Math.round(im.naturalHeight*r));c.getContext('2d').drawImage(im,0,0,c.width,c.height);res({bytes:_dataUrlBytes(c.toDataURL('image/png')),w:c.width,h:c.height});}catch(e){res(null);}};
+    im.onerror=()=>res(null);
+    im.src=src;
+  });
+}
+// Graphique de disponibilité dessiné directement sur un canvas (PNG pour Word)
+function _availChartPng(weeklyAvail){
+  if(!weeklyAvail||!weeklyAvail.length)return null;
+  const S=2, W=900, H=260, c=document.createElement('canvas');c.width=W*S;c.height=H*S;
+  const g=c.getContext('2d');g.scale(S,S);g.fillStyle='#fff';g.fillRect(0,0,W,H);
+  const n=weeklyAvail.length, L=50, R=W-20, X=i=>n===1?(L+R)/2:L+i*(R-L)/(n-1), Y=v=>215-v*1.75;
+  g.font='12px Arial';g.textAlign='right';
+  [0,25,50,75,100].forEach(v=>{g.strokeStyle='#e6e7eb';g.lineWidth=1;g.beginPath();g.moveTo(L-8,Y(v));g.lineTo(R,Y(v));g.stroke();g.fillStyle='#999';g.fillText(v+'%',L-12,Y(v)+4);});
+  g.strokeStyle='#C8102E';g.lineWidth=2.5;g.beginPath();weeklyAvail.forEach((w,i)=>{i?g.lineTo(X(i),Y(w.pct)):g.moveTo(X(i),Y(w.pct));});g.stroke();
+  g.textAlign='center';
+  const every=Math.ceil(n/16);
+  weeklyAvail.forEach((w,i)=>{
+    g.fillStyle=w.pct>=80?'#22a559':w.pct>=60?'#e6791a':'#C8102E';
+    g.beginPath();g.arc(X(i),Y(w.pct),6,0,Math.PI*2);g.fill();g.strokeStyle='#fff';g.lineWidth=2;g.stroke();
+    g.fillStyle='#111';g.font='bold 12px Arial';g.fillText(w.pctDisplay+'%',X(i),Y(w.pct)-12);
+    if(i%every===0||i===n-1){g.fillStyle='#888';g.font='11px Arial';g.fillText(w.label,X(i),248);}
+  });
+  return{bytes:_dataUrlBytes(c.toDataURL('image/png')),w:W*S,h:H*S};
+}
+
+async function generateInjuryReportDocx(){
+  const catName=cat||window._ctxCat||'Alamercery';
+  const players=ACTIVE_DB.filter(p=>inRosterView(p,catName)).sort(bySurname);
+  const broaderPlayers=ACTIVE_DB.filter(p=>(p.cat==='Gaudermans'?'Gauderman':p.cat)===catName);
+  const matchPool=[...new Map([...players,...broaderPlayers].map(p=>[p.id,p])).values()];
+  const rosterMatch=x=>{
+    const xGen=parseInt(x.gen)||null;
+    return matchPool.some(p=>{
+      const nm=canonicalNameKey(p.name)===canonicalNameKey(x.nom)||nameWords(x.nom).some(w=>w.length>=3&&nameWords(p.name).includes(w));
+      return nm&&!(xGen&&p.gen&&xGen!==p.gen);
+    });
+  };
+  const teamInjuries=[...injuriesDB].filter(rosterMatch);
+  const seasonInjuries=teamInjuries.filter(x=>!x.date||x.date>=SEASON_START_DATE);
+  const statsInjuries=seasonInjuries.filter(x=>!normAccent(x.etape).includes('arrive'));
+  const s=computeInjuryStats(statsInjuries,players);
+  const vol=computeVolumeRates(statsInjuries,catName);
+  const weeklyAvail=computeWeeklyAvailability(players,seasonInjuries,SEASON_START_DATE,catName);
+  const groups=groupOngoingByPlayer(teamInjuries,matchPool,injuriesDB);
+  const indispo=groups.filter(g=>g.status==='blesse');
+  const reath=groups.filter(g=>g.status!=='blesse');
+  const outIds=new Set(groups.filter(g=>g.p&&players.includes(g.p)).map(g=>g.p.id));
+  const aptes=Math.max(0,players.length-outIds.size);
+  const pctApte=players.length?Math.round(aptes/players.length*100):0;
+
+  // Joueurs de retour : blessure terminée entre le lundi de cette semaine et aujourd'hui
+  const today=new Date();today.setHours(0,0,0,0);
+  const monday=new Date(dateToWeekStart(today));monday.setHours(0,0,0,0);
+  const outKeys=new Set(groups.map(g=>g.p?g.p.id:'nom:'+canonicalNameKey(g.nom)));
+  const retMap=new Map();
+  teamInjuries.filter(x=>!isInjuryOngoing(x)).forEach(x=>{
+    const e=injuryEndDate(x);if(!e||isNaN(e))return;
+    const d=new Date(e);d.setHours(0,0,0,0);
+    if(d<monday||d>today)return;
+    const p=injuryFindPlayer(x,matchPool), key=p?p.id:'nom:'+canonicalNameKey(x.nom);
+    if(outKeys.has(key))return; // encore out pour une autre blessure
+    if(!retMap.has(key))retMap.set(key,{p,nom:x.nom,list:[],ret:d});
+    const r=retMap.get(key);r.list.push(x);if(d>r.ret)r.ret=d;
+  });
+  const returned=[...retMap.values()].sort((a,b)=>b.ret-a.ret);
+
+  initBlessurePeriod();
+  const selMonth=blessurePeriodMonth, mm=String(selMonth.month+1).padStart(2,'0');
+  const mStart=`${selMonth.year}-${mm}-01`, mEnd=`${selMonth.year}-${mm}-${String(new Date(selMonth.year,selMonth.month+1,0).getDate()).padStart(2,'0')}`;
+  const monthInj=statsInjuries.filter(x=>x.date&&x.date>=mStart&&x.date<=mEnd);
+  const monthRet=statsInjuries.filter(x=>x.retour&&x.retour>=mStart&&x.retour<=mEnd).length;
+  const MOIS=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  const monthLabel=`${MOIS[selMonth.month]} ${selMonth.year}`;
+  const seasonLabel=window._ctxSaison||CURRENT_SEASON;
+  const now=new Date();
+  const longDate=now.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+  // Images
+  const logo=await _imgToPng(customLogo||DEFAULT_CLUB_LOGO,400);
+  const chart=_availChartPng(weeklyAvail);
+
+  // ── Briques XML ──
+  const esc=t=>String(t??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const RED='C8102E', ORA='E6791A', GRN='1F8F4E', INK='111111', MUT='7A7F88';
+  const run=(t,o={})=>`<w:r><w:rPr>${o.b?'<w:b/>':''}${o.i?'<w:i/>':''}${o.color?`<w:color w:val="${o.color}"/>`:''}${o.sz?`<w:sz w:val="${o.sz}"/><w:szCs w:val="${o.sz}"/>`:''}${o.caps?'<w:caps/>':''}${o.sp?`<w:spacing w:val="${o.sp}"/>`:''}</w:rPr><w:t xml:space="preserve">${esc(t)}</w:t></w:r>`;
+  const par=(content,o={})=>`<w:p><w:pPr>${o.keep?'<w:keepNext/>':''}${o.pb?'<w:pageBreakBefore/>':''}<w:spacing w:before="${o.before||0}" w:after="${o.after??80}"/>${o.align?`<w:jc w:val="${o.align}"/>`:''}${o.border?`<w:pBdr><w:bottom w:val="single" w:sz="18" w:space="4" w:color="${RED}"/></w:pBdr>`:''}</w:pPr>${content}</w:p>`;
+  const P=(t,o={})=>par(run(t,o),o);
+  const H=(t,count,o={})=>par(run(t.toUpperCase(),{b:true,sz:28,sp:10})+(count!==undefined?run('   '+count,{b:true,sz:28,color:RED}):''),{border:true,after:200,before:120,keep:true,...o});
+  const SUB=t=>P(t.toUpperCase(),{b:true,sz:18,color:'555555',before:160,after:80,keep:true,sp:8});
+  const pageBreak='<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+  let imgN=0;const media=[], rels=[];
+  const img=(im,wCm)=>{
+    if(!im)return'';
+    imgN++;const id='rIdImg'+imgN, file=`image${imgN}.png`;
+    media.push({name:'word/media/'+file,data:im.bytes});
+    rels.push(`<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${file}"/>`);
+    const cx=Math.round(wCm*360000), cy=Math.round(cx*im.h/im.w);
+    return`<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${imgN}" name="Image ${imgN}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${imgN}" name="${file}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+  };
+  // Cellule : content = XML de paragraphes ; o: w (twips), fill, color, vAlign
+  const cell=(content,o={})=>`<w:tc><w:tcPr><w:tcW w:w="${o.w}" w:type="dxa"/>${o.span?`<w:gridSpan w:val="${o.span}"/>`:''}${o.nb?'<w:tcBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/></w:tcBorders>':''}${o.fill?`<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>`:''}<w:vAlign w:val="${o.v||'center'}"/></w:tcPr>${content||'<w:p/>'}</w:tc>`;
+  const borders=(c='DDDDDD',inner=true)=>`<w:tblBorders><w:top w:val="single" w:sz="4" w:color="${c}"/><w:left w:val="single" w:sz="4" w:color="${c}"/><w:bottom w:val="single" w:sz="4" w:color="${c}"/><w:right w:val="single" w:sz="4" w:color="${c}"/>${inner?`<w:insideH w:val="single" w:sz="4" w:color="${c}"/><w:insideV w:val="single" w:sz="4" w:color="${c}"/>`:'<w:insideH w:val="nil"/><w:insideV w:val="nil"/>'}</w:tblBorders>`;
+  const noBorders='<w:tblBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/></w:tblBorders>';
+  const table=(widths,rowsXml,o={})=>`<w:tbl><w:tblPr><w:tblW w:w="${widths.reduce((a,b)=>a+b,0)}" w:type="dxa"/>${o.center?'<w:jc w:val="center"/>':''}${o.nob?noBorders:borders(o.bc,o.inner!==false)}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="${o.pad??70}" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="${o.pad??70}" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${widths.map(w=>`<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>${rowsXml}</w:tbl>`;
+  const row=(cells,o={})=>`<w:tr><w:trPr><w:cantSplit/>${o.h?`<w:trHeight w:val="${o.h}" w:hRule="atLeast"/>`:''}${o.header?'<w:tblHeader/>':''}</w:trPr>${cells}</w:tr>`;
+  const FULL=9638; // largeur utile A4 (marges 2 cm)
+  const spacer=(after=160)=>`<w:p><w:pPr><w:spacing w:before="0" w:after="${after}"/></w:pPr></w:p>`;
+
+  // Tuiles de chiffres (fond coloré, texte blanc)
+  const tiles=(items,w=FULL)=>{
+    const cw=Math.floor(w/items.length);
+    return table(items.map(()=>cw),row(items.map(it=>cell(
+      P(String(it.v),{b:true,sz:it.sz||44,color:it.fill?'FFFFFF':(it.color||INK),align:'center',after:20})+P(it.l.toUpperCase(),{b:true,sz:15,color:it.fill?'FFFFFF':MUT,align:'center',after:0,sp:6}),
+      {w:cw,fill:it.fill||'F4F4F6'})).join('')),{bc:'FFFFFF',pad:140});
+  };
+  // Petit tableau « libellé / nombre / % »
+  const statTable=(title,rows,total,w,fmt,heads)=>{
+    const c1=Math.round(w*0.56), c2=Math.round(w*0.2), c3=w-c1-c2;
+    const head=row(cell(P(title.toUpperCase(),{b:true,sz:16,color:'FFFFFF',after:0,sp:6}),{w:c1,fill:INK})+cell(P(heads?heads[0]:fmt?'%':'Nb',{b:true,sz:16,color:'FFFFFF',align:'right',after:0}),{w:c2,fill:INK})+cell(P(heads?heads[1]:fmt?'Joueurs':'%',{b:true,sz:16,color:'FFFFFF',align:'right',after:0}),{w:c3,fill:INK}),{header:true});
+    const body=rows.length?rows.slice(0,6).map(r=>{
+      const [a,b,c]=fmt?fmt(r):[r[0],r[1],total?Math.round(r[1]/total*100)+'%':'—'];
+      return row(cell(P(a,{sz:18,after:0}),{w:c1})+cell(P(String(b),{b:true,sz:18,align:'right',after:0}),{w:c2})+cell(P(String(c),{sz:18,color:MUT,align:'right',after:0}),{w:c3}));
+    }).join(''):row(cell(P('Pas de données.',{sz:18,color:MUT,after:0}),{w,span:3}));
+    return table([c1,c2,c3],head+body,{bc:'E3E3E6'});
+  };
+  const pair=(a,b)=>{const half=Math.floor((FULL-280)/2);return table([half,280,half],row(cell(a+'<w:p/>',{w:half,v:'top',nb:1})+cell('',{w:280,nb:1})+cell(b+'<w:p/>',{w:half,v:'top',nb:1})),{nob:true,pad:0});};
+  const half=Math.floor((FULL-280)/2)-220;
+
+  // ── 1. PAGE DE GARDE ──
+  let body='';
+  body+=table([FULL],row(cell('',{w:FULL,fill:INK}),{h:120}),{nob:true,pad:0});
+  body+=spacer(1400);
+  body+=par(img(logo,4.6),{align:'center',after:300});
+  body+=P('NISSA RUGBY',{b:true,sz:26,sp:60,align:'center',after:500});
+  body+=P('RAPPORT BLESSURES',{b:true,sz:60,color:RED,align:'center',after:120});
+  body+=P('Point infirmerie à destination du staff',{sz:22,color:MUT,align:'center',after:120});
+  body+=P(catName,{b:true,sz:40,align:'center',after:700});
+  const cw=2000;
+  body+=table([cw,cw,cw,cw],row(
+    cell(P('SAISON',{b:true,sz:15,color:MUT,align:'center',after:40,sp:20})+P(seasonLabel,{b:true,sz:30,align:'center',after:0}),{w:cw})+
+    cell(P('INDISPONIBLES',{b:true,sz:15,color:MUT,align:'center',after:40,sp:20})+P(String(indispo.length),{b:true,sz:36,color:RED,align:'center',after:0}),{w:cw})+
+    cell(P('RÉATHLÉ.',{b:true,sz:15,color:MUT,align:'center',after:40,sp:20})+P(String(reath.length),{b:true,sz:36,color:ORA,align:'center',after:0}),{w:cw})+
+    cell(P('APTES',{b:true,sz:15,color:MUT,align:'center',after:40,sp:20})+P(`${aptes} / ${players.length}`,{b:true,sz:36,color:GRN,align:'center',after:0}),{w:cw})
+  ),{center:true,bc:INK,pad:160});
+  body+=spacer(700);
+  body+=P(longDate.charAt(0).toUpperCase()+longDate.slice(1),{sz:22,b:true,align:'center',after:60});
+  body+=P(`Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`,{sz:18,color:MUT,align:'center',after:0});
+  body+=pageBreak;
+
+  // ── 2. BILAN DE LA SAISON ──
+  body+=H(`Bilan de la saison — depuis le ${fD(SEASON_START_DATE)}`);
+  body+=tiles([
+    {v:s.total,l:'Blessures',sz:36},
+    {v:s.nbJoueursTouches,l:'Joueurs touchés',sz:36},
+    {v:s.avgDuration!==null?s.avgDuration.toFixed(0)+' j':'—',l:'Absence moyenne',sz:36},
+    {v:s.totalAbsenceDays,l:"Jours d'absence cumulés",sz:36}
+  ]);
+  if(vol.nbMatchs>0||vol.nbEntrainements>0){
+    body+=spacer(80);
+    body+=tiles([
+      {v:vol.tauxMatch!==null?vol.tauxMatch:'—',l:`Blessures par match (${vol.injMatch} sur ${vol.nbMatchs})`,sz:32},
+      {v:vol.tauxEntrainement!==null?vol.tauxEntrainement:'—',l:`Blessures par entraînement (${vol.injEntrainement} sur ${vol.nbEntrainements})`,sz:32}
+    ]);
+  }
+  body+=spacer(200);
+  const rateFmt=r=>[r[0],r[1]+'%',`${r[2]}/${r[3]}`];
+  body+=pair(statTable('Localisation',s.byLoc,s.total,half),statTable('Type',s.byType,s.total,half));
+  body+=pair(statTable('Typologie',s.byTypo,s.total,half),statTable('Moment',s.byMoment,s.total,half));
+  body+=pair(statTable('Avants / 3/4',s.byPosGroupRate,0,half,rateFmt),statTable('Générations',s.byGenRate,0,half,rateFmt));
+  if(s.avgDurationByTypo.length)body+=statTable("Durée moyenne d'absence par typologie",s.avgDurationByTypo,0,FULL,r=>[r[0],r[1]+' j',r[2]+' cas'],['Moyenne','Cas']);
+  const arrived=seasonInjuries.filter(x=>normAccent(x.etape).includes('arrive'));
+  if(arrived.length)body+=P('Arrivés blessés (hors statistiques) : '+arrived.map(x=>`${x.nom} — ${x.loc||'?'}${x.type?' ('+x.type+')':''}`).join(' · '),{sz:16,color:MUT,before:120});
+
+  // ── 3. DISPONIBILITÉ DE L'EFFECTIF ──
+  body+=H("Disponibilité de l'effectif",undefined,{pb:true});
+  body+=tiles([
+    {v:indispo.length,l:'Indisponibles',fill:RED},
+    {v:reath.length,l:'En réathlétisation',fill:ORA},
+    {v:`${aptes} / ${players.length}`,l:`Aptes · ${pctApte}%`,fill:GRN}
+  ]);
+  if(chart){
+    body+=SUB('Disponibilité semaine par semaine');
+    body+=par(img(chart,17),{align:'center',after:40});
+    body+=P("% de joueurs aptes = (effectif − indisponibles − réathlétisation) / effectif. Vert ≥ 80 % · orange 60-79 % · rouge < 60 %.",{sz:15,color:MUT,after:120});
+  }
+  body+=SUB('Ce mois-ci — '+monthLabel);
+  body+=tiles([
+    {v:monthInj.length,l:'Nouvelles blessures',sz:36},
+    {v:monthRet,l:'Retours au jeu',sz:36},
+    {v:computeInjuryStats(monthInj,players).grave,l:'Graves',sz:36}
+  ]);
+
+  // ── Tableaux joueurs ──
+  const zoneOf=x=>{const z=bodyZoneOf(x), side=injurySide(x);return(x.loc||(z?BODY_ZONE_LABELS[z.k]:'')||'—')+(side&&!/droit|gauche/i.test(x.loc||'')?` (${injurySideLabel(side).toLowerCase()})`:'');};
+  const nameOf=g=>g.p?pFullDisplayName(g.p):g.nom;
+  const posteOf=(g,x)=>(g.p&&(g.p.p1||'').trim())||(x&&x.poste)||'';
+  const injLines=list=>list.map(x=>
+    P(zoneOf(x),{b:true,sz:18,after:10})+
+    P([x.type,x.gravite,x.lieu].filter(Boolean).join(' · ')||'Type non renseigné',{sz:16,color:MUT,after:40})
+  ).join('');
+  const playerCell=(g,x,w,accent)=>cell(P(nameOf(g),{b:true,sz:20,after:10})+(posteOf(g,x)?P(posteOf(g,x),{sz:16,color:MUT,after:0}):''),{w});
+  const headRow=(cols,widths,fill)=>row(cols.map((c,i)=>cell(P(c.toUpperCase(),{b:true,sz:15,color:'FFFFFF',after:0,sp:6}),{w:widths[i],fill})).join(''),{header:true});
+
+  // De retour
+  body+=H('De retour cette semaine',returned.length,{pb:true});
+  body+=P(`Joueurs revenus disponibles depuis le lundi ${fD(dateToKey(monday))}${returned.some(r=>+r.ret===+today)?' — en gras : de retour aujourd\'hui':''}.`,{sz:16,color:MUT,after:120});
+  if(returned.length){
+    const W=[2900,3600,1500,1638];
+    body+=table(W,headRow(['Joueur','Blessure','Absent depuis','Retour'],W,GRN)+returned.map(r=>{
+      const first=r.list.map(x=>x.date).filter(Boolean).sort()[0];
+      const isToday=+r.ret===+today;
+      return row(playerCell(r,r.list[0],W[0])+cell(injLines(r.list),{w:W[1]})+cell(P(first?fD(first):'—',{sz:18,after:0}),{w:W[2]})+cell(P(isToday?"Aujourd'hui":fD(dateToKey(r.ret)),{b:isToday,sz:18,color:isToday?GRN:INK,after:0}),{w:W[3]}));
+    }).join(''),{bc:'D9D9DE'});
+  }else body+=P('Aucun retour cette semaine.',{sz:18,color:MUT,after:120});
+
+  // Réathlé + indispo avec colonne commentaire vide
+  const outTable=(list,fill)=>{
+    const W=[2300,2700,1250,3388];
+    return table(W,headRow(['Joueur','Blessure','Retour estimé','Commentaire'],W,fill)+list.map(g=>{
+      const j=daysSince(g.since);
+      const futur=g.current.map(x=>x.retour).filter(r=>r&&new Date(r)>new Date()).sort();
+      const est=futur.length?fD(futur[futur.length-1]):'';
+      return row(
+        cell(P(nameOf(g),{b:true,sz:20,after:10})+(posteOf(g,g.current[0])?P(posteOf(g,g.current[0]),{sz:16,color:MUT,after:20}):'')+(g.since?P(`Depuis le ${fD(g.since)}${j!==null?` · J+${j}`:''}`,{sz:16,color:fill,b:true,after:0}):''),{w:W[0],v:'top'})+
+        cell(injLines(g.current),{w:W[1],v:'top'})+
+        cell(P(est||'',{sz:18,b:!!est,after:0,align:'center'}),{w:W[2]})+
+        cell('<w:p/>',{w:W[3]})
+      ,{h:1250});
+    }).join(''),{bc:'BFBFC6'});
+  };
+  body+=H('En réathlétisation',reath.length,{before:400});
+  body+=reath.length?outTable(reath,ORA):P('Aucun joueur en réathlétisation.',{sz:18,color:MUT});
+  body+=H('Indisponibles',indispo.length,{before:400});
+  body+=indispo.length?outTable(indispo,RED):P('Aucun joueur indisponible.',{sz:18,color:MUT});
+
+  // ── En-tête (logo) / pied de page (numéro) ──
+  const NS='xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+  const docRels=rels.slice();
+  // logo de l'en-tête : relation propre au header
+  const headRels=[];let headerLogo='';
+  if(logo){
+    media.push({name:'word/media/hlogo.png',data:logo.bytes});
+    headRels.push('<Relationship Id="rIdH1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/hlogo.png"/>');
+    const cx=Math.round(1.1*360000), cy=Math.round(cx*logo.h/logo.w);
+    headerLogo=`<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="900" name="Logo"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="900" name="hlogo.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdH1"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+  }
+  const header=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${NS}>${table([1100,FULL-1100],row(cell(par(headerLogo,{after:0}),{w:1100})+cell(P(`NISSA RUGBY · RAPPORT BLESSURES · ${catName.toUpperCase()}`,{b:true,sz:15,color:MUT,align:'right',after:0,sp:10}),{w:FULL-1100})),{nob:true,pad:0})}${par('',{border:true,after:0})}</w:hdr>`;
+  const fld=`<w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:t>1</w:t></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="end"/></w:r>`;
+  const footer=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ${NS}>${par(run(`Nissa Rugby · ${catName} · ${now.toLocaleDateString('fr-FR')} · page `,{sz:16,color:MUT})+fld,{align:'center',after:0})}</w:ftr>`;
+  const emptyHdr=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${NS}><w:p/></w:hdr>`;
+  const emptyFtr=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ${NS}><w:p/></w:ftr>`;
+  docRels.push('<Relationship Id="rIdHdr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
+    '<Relationship Id="rIdHdr1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/>',
+    '<Relationship Id="rIdFtr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+    '<Relationship Id="rIdFtr1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/>',
+    '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>');
+  const sect=`<w:sectPr><w:headerReference w:type="default" r:id="rIdHdr"/><w:headerReference w:type="first" r:id="rIdHdr1"/><w:footerReference w:type="default" r:id="rIdFtr"/><w:footerReference w:type="first" r:id="rIdFtr1"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1300" w:right="1134" w:bottom="1000" w:left="1134" w:header="500" w:footer="450" w:gutter="0"/><w:titlePg/></w:sectPr>`;
+  const docXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${NS}><w:body>${body}${sect}</w:body></w:document>`;
+  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial"/><w:color w:val="111111"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="fr-FR"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="80" w:line="252" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
+  const ct=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/footer2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`;
+  const relsXml=r=>`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${r.join('')}</Relationships>`;
+  const core=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${esc('Rapport blessures — '+catName)}</dc:title><dc:creator>Nissa Rugby</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now.toISOString().slice(0,19)}Z</dcterms:created></cp:coreProperties>`;
+  const enc=new TextEncoder();
+  const files=[
+    {name:'[Content_Types].xml',data:enc.encode(ct)},
+    {name:'_rels/.rels',data:enc.encode(relsXml(['<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>','<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>']))},
+    {name:'docProps/core.xml',data:enc.encode(core)},
+    {name:'word/document.xml',data:enc.encode(docXml)},
+    {name:'word/styles.xml',data:enc.encode(styles)},
+    {name:'word/header1.xml',data:enc.encode(header)},
+    {name:'word/header2.xml',data:enc.encode(emptyHdr)},
+    {name:'word/footer1.xml',data:enc.encode(footer)},
+    {name:'word/footer2.xml',data:enc.encode(emptyFtr)},
+    {name:'word/_rels/document.xml.rels',data:enc.encode(relsXml(docRels))},
+    {name:'word/_rels/header1.xml.rels',data:enc.encode(relsXml(headRels))},
+    ...media
+  ];
+  const bytes=_zipStore(files);
+  const fname=`Rapport_blessures_${catName}_${dateToKey(now)}.docx`;
+  const mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const blob=new Blob([bytes],{type:mime});
+  window._lastInjuryDocx=blob; // (tests)
+  // Sur téléphone : feuille de partage (Fichiers, WhatsApp, mail…) ; sinon téléchargement direct
+  try{
+    const file=new File([blob],fname,{type:mime});
+    if(navigator.canShare&&navigator.canShare({files:[file]})&&/iPhone|iPad|Android/i.test(navigator.userAgent)){
+      await navigator.share({files:[file],title:'Rapport blessures — '+catName});return;
+    }
+  }catch(e){if(e&&e.name==='AbortError')return;}
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fname;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);
+}
+
 function bBlessuresCollectif(allInjuries,roster,catName,fullSeasonInjuries){
   const s=computeInjuryStats(allInjuries,roster);
   const vol=computeVolumeRates(allInjuries,catName||'Alamercery');
@@ -8314,6 +8631,7 @@ function bBlessuresCollectif(allInjuries,roster,catName,fullSeasonInjuries){
         <div style="display:flex;gap:6px;">
           <button onclick="view='wellnessinjury';wellnessData=null;render()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);padding:7px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">📊 Wellness ↔ Blessures</button>
           <button onclick="generateInjuryReport()" style="background:#fff;color:var(--ink);border:none;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">📄 Rapport PDF</button>
+          <button onclick="generateInjuryReportDocx()" style="background:#2b579a;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">📝 Rapport Word</button>
         </div>
       </div>
       <div style="font-size:26px;font-weight:800;color:#fff;margin-bottom:20px;">${s.total} blessure${s.total>1?'s':''} enregistrée${s.total>1?'s':''}</div>
