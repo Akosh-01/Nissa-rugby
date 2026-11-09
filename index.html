@@ -8383,6 +8383,13 @@ async function generateInjuryReportDocx(){
   // Images
   const logo=await _imgToPng(customLogo||DEFAULT_CLUB_LOGO,400);
   const chart=_availChartPng(weeklyAvail);
+  // Match(s) de la semaine ; à défaut, le(s) match(s) de la semaine suivante
+  const wkKey=dateToWeekStart(today);
+  let matchTitle='Match de la semaine', matches=getMatchesForWeek(wkKey,catName);
+  if(!matches.length){const n=new Date(today);n.setDate(n.getDate()+7);matches=getMatchesForWeek(dateToWeekStart(n),catName);matchTitle='Prochain match';}
+  if(matches.length>1&&matchTitle==='Match de la semaine')matchTitle='Matchs de la semaine';
+  const initialsPng=name=>{const c=document.createElement('canvas');c.width=c.height=240;const g=c.getContext('2d');g.fillStyle='#ececec';g.beginPath();g.arc(120,120,114,0,Math.PI*2);g.fill();g.lineWidth=8;g.strokeStyle='#c8c8c8';g.stroke();g.fillStyle='#666';g.font='bold 80px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText(oppInitials(name),120,124);return{bytes:_dataUrlBytes(c.toDataURL('image/png')),w:240,h:240};};
+  for(const m of matches){const src=opponentLogos[oppKey(m.opponent)];m._png=(src&&await _imgToPng(src,400))||initialsPng(m.opponent);}
 
   // ── Briques XML ──
   const esc=t=>String(t??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -8434,12 +8441,27 @@ async function generateInjuryReportDocx(){
   // ── 1. PAGE DE GARDE ──
   let body='';
   body+=table([FULL],row(cell('',{w:FULL,fill:INK}),{h:120}),{nob:true,pad:0});
-  body+=spacer(1400);
+  body+=spacer(matches.length?500:1400);
   body+=par(img(logo,4.6),{align:'center',after:300});
   body+=P('NISSA RUGBY',{b:true,sz:26,sp:60,align:'center',after:500});
   body+=P('RAPPORT BLESSURES',{b:true,sz:60,color:RED,align:'center',after:120});
   body+=P('Point infirmerie à destination du staff',{sz:22,color:MUT,align:'center',after:120});
-  body+=P(catName,{b:true,sz:40,align:'center',after:700});
+  body+=P(catName,{b:true,sz:40,align:'center',after:matches.length?400:700});
+  if(matches.length){
+    body+=P(matchTitle.toUpperCase(),{b:true,sz:16,color:MUT,align:'center',sp:30,after:120});
+    const JOURS=['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
+    matches.forEach(m=>{
+      const us=par(img(logo,2.6),{align:'center',after:0}), them=par(img(m._png,2.6),{align:'center',after:0});
+      const vs=P('VS',{b:true,sz:36,color:RED,align:'center',after:0});
+      const cw2=[2200,1200,2200];
+      body+=table(cw2,row(cell(m.home===false?them:us,{w:cw2[0],nb:1})+cell(vs,{w:cw2[1],nb:1})+cell(m.home===false?us:them,{w:cw2[2],nb:1})),{nob:true,center:true,pad:40});
+      const d=m.date?new Date(m.date):null;
+      const when=d&&!isNaN(d)?`${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]}`:'';
+      body+=P(m.opponent,{b:true,sz:26,align:'center',before:80,after:20});
+      body+=P([venueLabel(m.home),when].filter(Boolean).join(' · '),{sz:18,color:MUT,align:'center',after:240});
+    });
+    body+=spacer(200);
+  }
   const cw=2000;
   body+=table([cw,cw,cw,cw],row(
     cell(P('SAISON',{b:true,sz:15,color:MUT,align:'center',after:40,sp:20})+P(seasonLabel,{b:true,sz:30,align:'center',after:0}),{w:cw})+
@@ -8447,7 +8469,7 @@ async function generateInjuryReportDocx(){
     cell(P('RÉATHLÉ.',{b:true,sz:15,color:MUT,align:'center',after:40,sp:20})+P(String(reath.length),{b:true,sz:36,color:ORA,align:'center',after:0}),{w:cw})+
     cell(P('APTES',{b:true,sz:15,color:MUT,align:'center',after:40,sp:20})+P(`${aptes} / ${players.length}`,{b:true,sz:36,color:GRN,align:'center',after:0}),{w:cw})
   ),{center:true,bc:INK,pad:160});
-  body+=spacer(700);
+  body+=spacer(matches.length?400:700);
   body+=P(longDate.charAt(0).toUpperCase()+longDate.slice(1),{sz:22,b:true,align:'center',after:60});
   body+=P(`Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`,{sz:18,color:MUT,align:'center',after:0});
   body+=pageBreak;
