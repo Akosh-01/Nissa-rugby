@@ -8452,25 +8452,8 @@ async function generateInjuryReportDocx(){
   body+=P(`Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`,{sz:18,color:MUT,align:'center',after:0});
   body+=pageBreak;
 
-  // ── 2. BILAN DE LA SAISON ──
-  body+=H(`Bilan de la saison — depuis le ${fD(SEASON_START_DATE)}`);
-  body+=tiles([
-    {v:s.total,l:'Blessures',sz:36},
-    {v:s.nbJoueursTouches,l:'Joueurs touchés',sz:36},
-    {v:s.avgDuration!==null?s.avgDuration.toFixed(0)+' j':'—',l:'Absence moyenne',sz:36},
-    {v:s.totalAbsenceDays,l:"Jours d'absence cumulés",sz:36}
-  ]);
-  body+=spacer(200);
-  const rateFmt=r=>[r[0],r[1]+'%',`${r[2]}/${r[3]}`];
-  body+=pair(statTable('Localisation',s.byLoc,s.total,half),statTable('Type',s.byType,s.total,half));
-  body+=pair(statTable('Typologie',s.byTypo,s.total,half),statTable('Moment',s.byMoment,s.total,half));
-  body+=pair(statTable('Avants / 3/4',s.byPosGroupRate,0,half,rateFmt),statTable('Générations',s.byGenRate,0,half,rateFmt));
-  if(s.avgDurationByTypo.length)body+=statTable("Durée moyenne d'absence par typologie",s.avgDurationByTypo,0,FULL,r=>[r[0],r[1]+' j',r[2]+' cas'],['Moyenne','Cas']);
-  const arrived=seasonInjuries.filter(x=>normAccent(x.etape).includes('arrive'));
-  if(arrived.length)body+=P('Arrivés blessés (hors statistiques) : '+arrived.map(x=>`${x.nom} — ${x.loc||'?'}${x.type?' ('+x.type+')':''}`).join(' · '),{sz:16,color:MUT,before:120});
-
   // ── 3. DISPONIBILITÉ DE L'EFFECTIF ──
-  body+=H("Disponibilité de l'effectif",undefined,{pb:true});
+  body+=H("Disponibilité de l'effectif");
   body+=tiles([
     {v:indispo.length,l:'Indisponibles',fill:RED},
     {v:reath.length,l:'En réathlétisation',fill:ORA},
