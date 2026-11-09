@@ -9651,11 +9651,27 @@ function generateRPETeamReport(weekKey){
     <div class="section-title">Détail RPE individuel — joueurs Académie</div>
     ${(()=>{
       const academyRoster=ACTIVE_DB.filter(p=>p.sc==='Académie'&&p.cat!=='Archivé');
-      const isAcademyName=name=>academyRoster.some(p=>{
-        const nm=canonicalNameKey(p.name),tn=canonicalNameKey(name);
-        if(nm===tn)return true;
-        return nameWords(name).some(w=>w.length>=3&&nameWords(p.name).includes(w));
-      });
+      // On identifie d'abord LE joueur (en gérant les homonymes : T. Boyer ≠ C. Boyer),
+      // puis on regarde s'il est à l'Académie.
+      const pool=ACTIVE_DB.filter(p=>p.cat!=='Archivé');
+      const resolve=name=>{
+        const tn=canonicalNameKey(name);
+        const exact=pool.find(p=>canonicalNameKey(p.name)===tn);
+        if(exact)return exact;
+        const tk=n=>String(n||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z\s-]/g,' ').split(/[\s-]+/).filter(Boolean);
+        const ws=tk(name);
+        const cands=pool.filter(p=>ws.some(w=>w.length>=3&&tk(p.name).includes(w)));
+        if(cands.length<=1)return cands[0]||null;
+        // Homonymes : on départage avec le prénom (complet ou initiale)
+        const best=cands.filter(p=>{
+          const pw=tk(p.name);
+          const rest=ws.filter(w=>!pw.includes(w));
+          const prest=pw.filter(w=>!ws.includes(w));
+          return rest.length&&rest.every(w=>prest.some(x=>x===w||(w.length<=2&&x.startsWith(w))));
+        });
+        return best.length===1?best[0]:null;
+      };
+      const isAcademyName=name=>{const p=resolve(name);return !!p&&p.sc==='Académie';};
       const academyPlayers=allPlayers.filter(([name])=>isAcademyName(name));
       if(!academyPlayers.length)return'<div style="color:#999;font-size:12px;">Aucun joueur Académie avec des données cette semaine.</div>';
       return academyPlayers.map(([name])=>{
