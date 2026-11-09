@@ -8350,6 +8350,8 @@ async function generateInjuryReportDocx(){
   const outIds=new Set(groups.filter(g=>g.p&&players.includes(g.p)).map(g=>g.p.id));
   const aptes=Math.max(0,players.length-outIds.size);
   const pctApte=players.length?Math.round(aptes/players.length*100):0;
+  const grpAvail=test=>{const g=players.filter(test);const ok=g.filter(p=>!outIds.has(p.id)).length;return{ok,tot:g.length,pct:g.length?Math.round(ok/g.length*100):0};};
+  const fwd=grpAvail(isForwardPos), bck=grpAvail(p=>!isForwardPos(p)&&isBackPos(p));
 
   // Joueurs de retour : blessure terminée entre le lundi de cette semaine et aujourd'hui
   const today=new Date();today.setHours(0,0,0,0);
@@ -8458,13 +8460,6 @@ async function generateInjuryReportDocx(){
     {v:s.avgDuration!==null?s.avgDuration.toFixed(0)+' j':'—',l:'Absence moyenne',sz:36},
     {v:s.totalAbsenceDays,l:"Jours d'absence cumulés",sz:36}
   ]);
-  if(vol.nbMatchs>0||vol.nbEntrainements>0){
-    body+=spacer(80);
-    body+=tiles([
-      {v:vol.tauxMatch!==null?vol.tauxMatch:'—',l:`Blessures par match (${vol.injMatch} sur ${vol.nbMatchs})`,sz:32},
-      {v:vol.tauxEntrainement!==null?vol.tauxEntrainement:'—',l:`Blessures par entraînement (${vol.injEntrainement} sur ${vol.nbEntrainements})`,sz:32}
-    ]);
-  }
   body+=spacer(200);
   const rateFmt=r=>[r[0],r[1]+'%',`${r[2]}/${r[3]}`];
   body+=pair(statTable('Localisation',s.byLoc,s.total,half),statTable('Type',s.byType,s.total,half));
@@ -8481,6 +8476,9 @@ async function generateInjuryReportDocx(){
     {v:reath.length,l:'En réathlétisation',fill:ORA},
     {v:`${aptes} / ${players.length}`,l:`Aptes · ${pctApte}%`,fill:GRN}
   ]);
+  body+=SUB('Disponibilité par ligne');
+  const lineTile=(lab,g)=>({v:`${g.pct}%`,l:`${lab} · ${g.ok} disponibles sur ${g.tot}`,sz:40,color:g.pct>=80?GRN:g.pct>=60?ORA:RED});
+  body+=tiles([lineTile("Effectif",{ok:aptes,tot:players.length,pct:pctApte}),lineTile('Avants',fwd),lineTile('3/4',bck)]);
   if(chart){
     body+=SUB('Disponibilité semaine par semaine');
     body+=par(img(chart,17),{align:'center',after:40});
@@ -8517,22 +8515,22 @@ async function generateInjuryReportDocx(){
   }else body+=P('Aucun retour cette semaine.',{sz:18,color:MUT,after:120});
 
   // Réathlé + indispo avec colonne commentaire vide
-  const outTable=(list,fill)=>{
-    const W=[2300,2700,1250,3388];
-    return table(W,headRow(['Joueur','Blessure','Retour estimé','Commentaire'],W,fill)+list.map(g=>{
+  const outTable=(list,fill,withEst)=>{
+    const W=withEst?[2300,2700,1250,3388]:[2300,2900,4438];
+    return table(W,headRow(withEst?['Joueur','Blessure','Retour estimé','Commentaire']:['Joueur','Blessure','Commentaire'],W,fill)+list.map(g=>{
       const j=daysSince(g.since);
       const futur=g.current.map(x=>x.retour).filter(r=>r&&new Date(r)>new Date()).sort();
       const est=futur.length?fD(futur[futur.length-1]):'';
       return row(
         cell(P(nameOf(g),{b:true,sz:20,after:10})+(posteOf(g,g.current[0])?P(posteOf(g,g.current[0]),{sz:16,color:MUT,after:20}):'')+(g.since?P(`Depuis le ${fD(g.since)}${j!==null?` · J+${j}`:''}`,{sz:16,color:fill,b:true,after:0}):''),{w:W[0],v:'top'})+
         cell(injLines(g.current),{w:W[1],v:'top'})+
-        cell(P(est||'',{sz:18,b:!!est,after:0,align:'center'}),{w:W[2]})+
-        cell('<w:p/>',{w:W[3]})
+        (withEst?cell(P(est||'',{sz:18,b:!!est,after:0,align:'center'}),{w:W[2]}):'')+
+        cell('<w:p/>',{w:W[W.length-1]})
       ,{h:1250});
     }).join(''),{bc:'BFBFC6'});
   };
   body+=H('En réathlétisation',reath.length,{before:400});
-  body+=reath.length?outTable(reath,ORA):P('Aucun joueur en réathlétisation.',{sz:18,color:MUT});
+  body+=reath.length?outTable(reath,ORA,true):P('Aucun joueur en réathlétisation.',{sz:18,color:MUT});
   body+=H('Indisponibles',indispo.length,{before:400});
   body+=indispo.length?outTable(indispo,RED):P('Aucun joueur indisponible.',{sz:18,color:MUT});
 
