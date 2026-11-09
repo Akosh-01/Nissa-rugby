@@ -323,6 +323,12 @@ async function loadCloudData(){
     if(d.playerDur){playerDurations=mergeMapCloud(playerDurations,d.playerDur);savePlayerDurationsLocal();}
     if(Array.isArray(d.rpeExcluded)){const before=manuallyExcludedRPE.size;d.rpeExcluded.forEach(k=>manuallyExcludedRPE.add(k));if(manuallyExcludedRPE.size>d.rpeExcluded.length)_cloudNeedsPush=true;try{localStorage.setItem('nr-rpe-excluded',JSON.stringify([...manuallyExcludedRPE]));}catch(e){}}
     if(Array.isArray(d.rpeDeleted)){d.rpeDeleted.forEach(k=>deletedRPEKeys.add(k));if(deletedRPEKeys.size>d.rpeDeleted.length)_cloudNeedsPush=true;try{localStorage.setItem('nr-deleted-rpe',JSON.stringify([...deletedRPEKeys]));}catch(e){}}
+    if(d.injReturns&&typeof d.injReturns==='object'){
+      // On garde la date la plus ancienne constatée pour chaque retour
+      Object.entries(d.injReturns).forEach(([k,v])=>{if(!injuryReturns[k]||v<injuryReturns[k])injuryReturns[k]=v;});
+      if(Object.keys(injuryReturns).some(k=>!(k in d.injReturns)))_cloudNeedsPush=true;
+      try{localStorage.setItem('nr-inj-returns',JSON.stringify(injuryReturns));}catch(e){}
+    }
     if(d.oppLogos&&typeof d.oppLogos==='object'){opponentLogos=mergeMapCloud(opponentLogos,d.oppLogos);try{localStorage.setItem('nr-opp-logos',JSON.stringify(opponentLogos));}catch(e){}}
     if(d.users){usersDB=d.users;try{localStorage.setItem('nr-users',JSON.stringify(usersDB));}catch(e){}}
     if(Array.isArray(d.matchSheets)){
@@ -377,6 +383,7 @@ async function saveCloudData(){
       rpeExcluded:[...manuallyExcludedRPE],
       rpeDeleted:[...deletedRPEKeys],
       oppLogos:opponentLogos,
+      injReturns:injuryReturns,
       savedAt:new Date().toISOString()
     };
     const jsonStr=JSON.stringify(payload);
@@ -5023,19 +5030,9 @@ function isRPENameInjured(name,weekStartKey){
   });
 
   return myInjuries.some(x=>{
-    const stillOngoing=isInjuryOngoing(x);
-    if(!x.date&&!stillOngoing)return false;
     const d0=x.date?new Date(x.date):new Date(beforeSeasonStart);
     if(isNaN(d0))return false;
-    let d1;
-    if(x.retour&&!isNaN(new Date(x.retour)))d1=new Date(x.retour);
-    else if(stillOngoing)d1=today;
-    else{
-      // Blessure terminée sans date de retour : on utilise la durée d'absence si elle est connue,
-      // sinon on ne compte que la semaine de la blessure (pour ne pas l'exclure indéfiniment).
-      const dur=computeInjuryDuration(x);
-      d1=new Date(d0);d1.setDate(d1.getDate()+(dur!==null?Math.max(1,dur):1));
-    }
+    const d1=injuryEndDate(x);
     // Blessé cette semaine-là si la blessure a commencé avant la fin de la semaine
     // et n'était pas terminée au début de la semaine (y compris blessé en cours de semaine).
     return d0<=weekEnd&&d1>weekStart;
@@ -7313,9 +7310,35 @@ function computeInjuryStats(injuries,roster){
 // Reconstitue le % de l'effectif disponible semaine par semaine depuis une date de départ,
 // en se basant sur les plages date de blessure -> date de retour de chaque blessure.
 // Une blessure sans date de retour est considérée active jusqu'à aujourd'hui (ou jusqu'à la fin de saison analysée).
+// ── Date de fin d'une blessure (retour) ──
+// 1) date de retour du Sheet ; 2) blessure en cours → aujourd'hui ; 3) date + durée d'absence ;
+// 4) sinon (Étape passée à « Retour au jeu » sans date) : date à laquelle l'appli a constaté le retour,
+//    enregistrée une fois pour toutes (lundi de la semaine où le retour a été vu), partagée entre appareils.
+let injuryReturns={};
+try{injuryReturns=JSON.parse(localStorage.getItem('nr-inj-returns')||'{}')||{};}catch(e){injuryReturns={};}
+function injuryKey(x){return [canonicalNameKey(x.nom||''),parseInt(x.gen)||'',x.date||'',normAccent(x.loc||''),normAccent(x.type||'')].join('|');}
+let _injRetSaveT=null;
+function injuryEndDate(x){
+  const today=new Date();today.setHours(0,0,0,0);
+  if(x.retour&&!isNaN(new Date(x.retour)))return new Date(x.retour);
+  if(isInjuryOngoing(x)){const t=new Date(today);t.setDate(t.getDate()+1);return t;} // toujours indisponible aujourd'hui
+  const dur=computeInjuryDuration(x);
+  if(dur!==null&&x.date&&!isNaN(new Date(x.date))){const d=new Date(x.date);d.setDate(d.getDate()+Math.max(1,dur));return d;}
+  const k=injuryKey(x);
+  if(!injuryReturns[k]){
+    injuryReturns[k]=dateToWeekStart(today);
+    clearTimeout(_injRetSaveT);_injRetSaveT=setTimeout(()=>{try{localStorage.setItem('nr-inj-returns',JSON.stringify(injuryReturns));}catch(e){}if(typeof scheduleCloudSave==='function')scheduleCloudSave();},800);
+  }
+  const r=new Date(injuryReturns[k]);
+  if(x.date&&!isNaN(new Date(x.date))&&r<=new Date(x.date)){const d=new Date(x.date);d.setDate(d.getDate()+1);return d;}
+  return r;
+}
 function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catName){
   if(!roster||!roster.length)return[];
-  const start=new Date(startDateStr);
+  // Toutes les dates ramenées à minuit heure locale (sinon le lundi en cours peut disparaître
+  // à cause du décalage UTC / heure d'été, et un retour daté du lundi ne compterait pas ce lundi-là)
+  const dayOf=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x;};
+  const start=dayOf(startDateStr);
   const today=new Date();today.setHours(0,0,0,0);
   if(isNaN(start))return[];
   // Veille de la reprise : sert de point de départ pour un joueur "arrivé blessé" sans date connue
@@ -7345,15 +7368,14 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
   let dbgTotal=0,dbgNoDateSkipped=0,dbgNoPlayerMatch=0,dbgBuilt=0;
   allInjuriesForRoster.forEach(x=>{
     dbgTotal++;
-    const stillOngoing=isInjuryOngoing(x);
-    if(!x.date&&!stillOngoing){dbgNoDateSkipped++;return;}
     const p=findPlayer(x);
     if(!p){dbgNoPlayerMatch++;return;}
     const key=p.id;
-    const d0=x.date?new Date(x.date):new Date(beforeStart);
+    const d0=x.date?dayOf(x.date):new Date(beforeStart);
     if(isNaN(d0))return;
-    const d1=x.retour&&!isNaN(new Date(x.retour))?new Date(x.retour):today;
-    const status=injuryStepStatus(x); // 'blesse' ou 'rehabilitation' — pour distinguer les deux dans l'infobulle
+    const d1=dayOf(injuryEndDate(x));
+    // Statut affiché dans l'infobulle : réhab si c'est l'étape actuelle, sinon blessé
+    const status=injuryStepStatus(x)==='rehabilitation'?'rehabilitation':'blesse';
     if(!rangesByPlayer[key])rangesByPlayer[key]=[];
     rangesByPlayer[key].push([d0,d1,status]);
     dbgBuilt++;
