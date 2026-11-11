@@ -2219,7 +2219,7 @@ function bHomeWellnessAlerts(){
       </div>
     </div>`;
   }
-  const allRows=Array.isArray(wellnessData)?wellnessData.slice(1):[];
+  const allRows=wellnessRowsForTeam(Array.isArray(wellnessData)?wellnessData.slice(1):[]);
   const dk=dateToKey(new Date());
   const assessments=getDailyAssessments(allRows,dk);
   // Toute réponse alarmante (orange/rouge) OU avec un commentaire → carte complète
@@ -5957,6 +5957,61 @@ function bRPEReport(){
 // ═══════════════════════════════════════════════════════
 // Joueurs qui remplissent le Wellness
 // Liste Wellness = tous les joueurs Alamercery (dynamique, plus de liste en dur)
+// ── Identification STRICTE d'un nom du Sheet Wellness → UN joueur de la base ──
+// Avant : un seul mot en commun suffisait (« BOYER », ou même un prénom comme « JEAN »),
+// ce qui mélangeait les équipes (Girardot, Issepi en Alamercery ; T. Boyer pris pour C. Boyer).
+// Maintenant : nom complet identique, sinon nom de famille identique ET prénom (ou initiale) compatible.
+const NAME_PARTICLES=new Set(['DE','DA','DI','DU','LE','LA','DEL','DES','VAN','VON','MC']);
+function _nameTokens(n){return String(n||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z\s'-]/g,' ').replace(/'/g,' ').split(/[\s-]+/).filter(Boolean);}
+function _lev1(a,b){ // distance d'édition ≤ 1
+  if(a===b)return true;if(Math.abs(a.length-b.length)>1)return false;
+  let i=0,j=0,d=0;
+  while(i<a.length&&j<b.length){if(a[i]===b[j]){i++;j++;continue;}if(++d>1)return false;if(a.length>b.length)i++;else if(b.length>a.length)j++;else{i++;j++;}}
+  return d+(a.length-i)+(b.length-j)<=1;
+}
+let _resolveCache=new Map(), _resolveDbRef=null;
+function resolveDbPlayer(name){
+  if(_resolveDbRef!==ACTIVE_DB){_resolveCache=new Map();_resolveDbRef=ACTIVE_DB;}
+  const key=String(name||'').trim();
+  if(!key)return null;
+  if(_resolveCache.has(key))return _resolveCache.get(key);
+  const pool=ACTIVE_DB.filter(p=>p&&p.cat!=='Archivé');
+  let res=null;
+  const ck=canonicalNameKey(key);
+  const exact=pool.filter(p=>canonicalNameKey(p.name)===ck);
+  if(exact.length===1)res=exact[0];
+  else if(!exact.length){
+    const W=_nameTokens(key);
+    const matches=[];
+    for(const p of pool){
+      const P=_nameTokens(p.name);if(!P.length)continue;
+      // nom de famille = 1er mot de la fiche (+ particule éventuelle : « DE LA FUENTE »)
+      let k=0;while(k<P.length-1&&NAME_PARTICLES.has(P[k]))k++;
+      const S=P.slice(0,k+1), G=P.slice(k+1);
+      if(!S.every(s=>W.includes(s))||S[S.length-1].length<3)continue;
+      const rest=W.filter(w=>!S.includes(w));
+      if(!rest.length){matches.push({p,strong:false});continue;}
+      const ok=rest.every(r=>G.some(g=>g===r||(r.length===1&&g[0]===r)||(r.length>=3&&(g.startsWith(r)||r.startsWith(g)))));
+      if(ok)matches.push({p,strong:true});
+    }
+    const strong=matches.filter(m=>m.strong);
+    if(strong.length===1)res=strong[0].p;
+    else if(!strong.length&&matches.length===1)res=matches[0].p;
+    else if(!matches.length){
+      // Faute de frappe (1 lettre) sur le nom complet : seulement si un seul joueur correspond
+      const near=pool.filter(p=>_lev1(canonicalNameKey(p.name),ck));
+      if(near.length===1)res=near[0];
+    }
+  }
+  _resolveCache.set(key,res);
+  return res;
+}
+// Ne garde que les réponses Wellness des joueurs de l'équipe affichée
+function wellnessRowsForTeam(rows,team){
+  const ids=new Set(ACTIVE_DB.filter(p=>inRosterView(p,team||window._ctxCat||'Alamercery')).map(p=>p.id));
+  return rows.filter(r=>{const p=resolveDbPlayer(r[1]);return !!p&&ids.has(p.id);});
+}
+
 function getWellnessPlayers(){
   return ACTIVE_DB
     .filter(p=>inRosterView(p,window._ctxCat||'Alamercery'))
@@ -5997,9 +6052,6 @@ function formeAbsolue(score){return((35-score)/30)*100;}
 
 // Construit, par joueur, la série triée de toutes ses réponses (dédupliquées par jour)
 function buildWellnessSeries(allRows){
-  // Construit un index des joueurs Alamercery par clé canonique → nom réel dans l'app
-  const rosterIndex={};
-  getWellnessPlayers().forEach(n=>rosterIndex[canonicalNameKey(n)]=n);
 
   const byPlayer={};
   for(const r of allRows){
@@ -6011,8 +6063,8 @@ function buildWellnessSeries(allRows){
     if(vals.some(v=>isNaN(v)))continue;
     const score=vals.reduce((a,b)=>a+b,0);
     // Résout le nom via clé canonique (insensible casse/ordre) → nom du roster
-    const ck=canonicalNameKey(rawName);
-    const name=rosterIndex[ck]||rawName;
+    const rp=resolveDbPlayer(rawName);
+    const name=rp?rp.name:rawName;
     const remarque=String(r[7]||'').trim();
     if(!byPlayer[name])byPlayer[name]={};
     byPlayer[name][dateKey]={date:dateKey,vals,score,forme:formeAbsolue(score),remarque};
@@ -6375,7 +6427,7 @@ function getDailyAssessments(allRows,dk){
 function renderWellnessBody(){
   if(!wellnessData)return`<div style="padding:20px;text-align:center;color:var(--text-muted);">⏳ Chargement...</div>`;
   if(wellnessData.error)return`<div style="padding:16px;color:#cc0000;text-align:center;">❌ ${wellnessData.error}<br><span style="font-size:11px;color:var(--text-muted);margin-top:6px;display:block;">Configure le script Wellness dans l'admin</span></div>`;
-  const allRows=Array.isArray(wellnessData)?wellnessData.slice(1):[];
+  const allRows=wellnessRowsForTeam(Array.isArray(wellnessData)?wellnessData.slice(1):[]);
   const dk=dateToKey(rpeDashDate);
   const assessments=getDailyAssessments(allRows,dk);
 
@@ -6574,19 +6626,10 @@ function wTabJoueurs(allRows,dk,assessments){
   // Les évaluations Wellness viennent d'un seul Google Sheet partagé entre toutes les équipes —
   // il faut donc les filtrer sur le roster de l'équipe actuellement sélectionnée, comme c'est déjà
   // fait pour la liste "N'ont pas répondu", sinon les réponses de toutes les équipes se mélangent.
-  const rosterNames=getWellnessPlayers();
-  assessments=assessments.filter(a=>rosterNames.some(wName=>{
-    const anu=a.name.toUpperCase(),wnu=wName.toUpperCase();
-    return canonicalNameKey(anu)===canonicalNameKey(wnu)||
-      nameWords(anu).some(w=>w.length>=3&&nameWords(wnu).includes(w));
-  }));
-
-  const responded=new Set(assessments.map(a=>a.name.toUpperCase()));
-  const missing=getWellnessPlayers().filter(wName=>![...responded].some(rn=>{
-    const rnu=rn.toUpperCase(),wnu=wName.toUpperCase();
-    return canonicalNameKey(rnu)===canonicalNameKey(wnu)||
-      nameWords(rnu).some(w=>w.length>=3&&nameWords(wnu).includes(w));
-  }));
+  const rosterNames=new Set(getWellnessPlayers());
+  assessments=assessments.filter(a=>rosterNames.has(a.name));
+  const responded=new Set(assessments.map(a=>a.name));
+  const missing=getWellnessPlayers().filter(n=>!responded.has(n));
   if(!assessments.length)return`<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">Aucune réponse Wellness ce jour.<br><span style="font-size:11px;color:var(--text-muted);">Les joueurs n'ont pas encore rempli le formulaire.</span></div>`;
 
   // Tri décroissant par sévérité : moins bonne forme = en premier
