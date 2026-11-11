@@ -1663,6 +1663,16 @@ async function secureEnter(){
   loadData();
 }
 // Équipe d'un joueur pour la saison en cours (Alamercery / Crabos en priorité, puis Académie)
+// Équipe ACTUELLE d'un joueur (saison en cours) pour l'affichage : roster de la saison,
+// sinon d'après la génération (Crabos = 16-17 ans, Alamercery en dessous). Plus de Gaudermans.
+function currentTeam(p){
+  if(!p)return'';
+  if(p.cat==='Archivé')return'Archivé';
+  const sd=SEASON_ROSTERS[CURRENT_SEASON]||{};
+  for(const t of ['Crabos','Alamercery'])if((sd[t]||[]).includes(p.id))return t;
+  if(p.gen){const y=parseInt(CURRENT_SEASON);return(y-p.gen)>=16?'Crabos':'Alamercery';}
+  return p.cat==='Gaudermans'||p.cat==='Gauderman'?'Alamercery':p.cat;
+}
 function teamOfPlayer(id){
   const sd=SEASON_ROSTERS[CURRENT_SEASON]||{};
   for(const t of ['Alamercery','Crabos','Académie','Gauderman'])if((sd[t]||[]).includes(id))return t;
@@ -2505,7 +2515,7 @@ function ffrRadarSVG(p){
       return{...a,v:ep?ep.v:null,unit:'kg',lv};
     }
     const last=ffrLastValue(p,a.k);
-    return{...a,v:last?last.v:null,est:!!(last&&last.reps>1),unit:FFR_BAREME[a.k].unit,lv:last&&pi>=0?ffrRadarLevel(a.k,last.v,pi):null};
+    return{...a,v:last?last.raw:null,est:!!(last&&last.reps>1),reps:last?last.reps:1,unit:FFR_BAREME[a.k].unit,lv:last&&pi>=0?ffrRadarLevel(a.k,last.v,pi):null};
   });
   const W=320,H=290,cx=160,cy=148,R=98;
   const ang=i=>(-90+i*72)*Math.PI/180;
@@ -2523,7 +2533,7 @@ function ffrRadarSVG(p){
     const[x,y]=pt(i,R+20);
     const anchor=Math.abs(x-cx)<10?'middle':(x>cx?'start':'end');
     const dy=i===0?-6:(y>cy?10:0);
-    const val=a.v!==null?(a.est?'≈ ':'')+(a.unit==='s'?a.v.toFixed(2):String(a.v)).replace('.',',')+' '+a.unit+(a.est?' (1RM)':''):'—';
+    const val=a.v!==null?(a.unit==='s'?a.v.toFixed(2):String(a.v)).replace('.',',')+' '+a.unit+(a.est?' ('+a.reps+'RM)':''):'—';
     s+=`<text x="${x.toFixed(1)}" y="${(y+dy).toFixed(1)}" text-anchor="${anchor}" font-size="11" font-weight="700" fill="#ffffff">${a.l}${a.club?'*':''}</text>`;
     s+=`<text x="${x.toFixed(1)}" y="${(y+dy+13).toFixed(1)}" text-anchor="${anchor}" font-size="10" fill="#9a9a9a">${val}</text>`;
   });
@@ -2550,7 +2560,7 @@ function ffrBaremeHTML(p){
       ${FFR_LEVELS.map((l,r)=>`<tr style="border-top:1px solid var(--border);${r<3?'background:rgba(0,120,255,.06);':''}"><td style="padding:5px 4px;">${ffrIcon(l,26)}</td>${keys.map(k=>`<td style="padding:5px 4px;font-weight:${r<3?800:600};">${f(FFR_BAREME[k].rows[r][sel],k)}</td>`).join('')}</tr>`).join('')}
       <tr style="border-top:1px solid var(--border);"><td style="padding:5px 4px;">${ffrIcon('rouge',26)}</td>${keys.map(()=>'<td style="color:var(--text-muted);font-size:11px;">en dessous</td>').join('')}</tr>
     </table></div>
-    <div style="font-size:10px;color:var(--text-muted);margin-top:8px;">Entre deux paliers, on attribue le palier inférieur. Coq et médaille sont indépendants. Squat et DC : les 3RM (Crabos) et 5RM (Alamercery) sont convertis en 1RM estimé (NSCA : 3RM ≈ 93 %, 5RM ≈ 87 % du 1RM).</div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:8px;">Entre deux paliers, on attribue le palier inférieur. Coq et médaille sont indépendants. Squat et DC : le barème est en 1RM ; nos 3RM (Crabos) et 5RM (Alamercery) sont ramenés à un 1RM estimé pour situer le joueur (NSCA : 3RM ≈ 93 %, 5RM ≈ 87 % du 1RM).</div>
   </div>`;
 }
 
@@ -2559,8 +2569,8 @@ function ffrCoqStripHTML(p){
   const items=Object.keys(FFR_BAREME).map(k=>{
     const last=ffrLastValue(p,k), b=FFR_BAREME[k];
     const g=last?ffrGrade(k,last.v,pi):null;
-    const val=last?(last.reps>1?'≈ ':'')+(b.unit==='s'?last.v.toFixed(2):String(last.v)).replace('.',',')+' '+b.unit:'—';
-    return`<div class="pf-coq"><div class="ic">${g?ffrIcon(g.coq,36)+(g.medal?ffrIcon(g.medal,32):''):'<span style="color:#555;font-size:22px;line-height:36px;">—</span>'}</div><div class="tn">${b.label}${last&&last.reps>1?' 1RM':''}</div><div class="tv"${last?'':' style="color:#555;"'}>${val}</div></div>`;
+    const val=last?(b.unit==='s'?last.raw.toFixed(2):String(last.raw)).replace('.',',')+' '+b.unit+(last.reps>1?` <span style="font-size:9px;color:#e23b3b;">${last.reps}RM</span>`:''):'—';
+    return`<div class="pf-coq"><div class="ic">${g?ffrIcon(g.coq,36)+(g.medal?ffrIcon(g.medal,32):''):'<span style="color:#555;font-size:22px;line-height:36px;">—</span>'}</div><div class="tn">${b.label}</div><div class="tv"${last?'':' style="color:#555;"'}>${val}</div></div>`;
   }).join('');
   return`<div class="pf-coqs">${items}</div>`;
 }
@@ -2576,11 +2586,10 @@ function bProfile(){
     const last=lat(h);
     const dt=last[0],sc=last[1],rm=last[2];
     const reps=RM_TESTS.includes(name)?testReps(p,name,last):1;
-    const est=reps>1&&typeof sc==='number'?est1RM(sc,reps):null;
     return`<div class="test-row tr-grid">
       <span class="tr-name">${name}</span>
       <span class="tr-badges">${ffrBadgesHTML(p,name,34)}</span>
-      <span class="tr-score"><span class="test-score">${tv(sc)}${reps>1?`<sup class="tr-rm">${reps}RM</sup>`:''}</span>${est!==null?`<span class="tr-est">≈ ${String(est).replace('.',',')} kg 1RM</span>`:''}</span>
+      <span class="tr-score"><span class="test-score">${tv(sc)}${reps>1?`<sup class="tr-rm">${reps}RM</sup>`:''}</span></span>
       <span class="tr-date">${fD(dt)}</span>
       ${canChart(h)
         ?`<button onclick="sC('${name.replace(/'/g,"\\'")}');" class="btn-red tr-btn">📈</button>`
@@ -2614,7 +2623,7 @@ function bProfile(){
       </div>
       <div class="pf-info">
         <div class="pf-name">${pFullDisplayName(p)}</div>
-        <div class="pf-sub"><span>Génération ${p.gen}</span><span class="pf-dot"></span><span>${p.cat}</span>${p.p1&&p.p1!=='/'?`<span class="pf-dot"></span><span>${p.p1}</span>`:''}</div>
+        <div class="pf-sub"><span>Génération ${p.gen}</span><span class="pf-dot"></span><span>${currentTeam(p)}</span>${p.p1&&p.p1!=='/'?`<span class="pf-dot"></span><span>${p.p1}</span>`:''}</div>
         <div style="margin-top:8px;">${injuryStatusBadgeHTML(getPlayerInjuryStatus(p.name,p.gen))}</div>
         <div class="pf-tiles" style="grid-template-columns:repeat(${infos.length>=8?4:3},minmax(0,1fr));">
           ${infos.map(([l,v])=>{
@@ -2728,7 +2737,7 @@ function bPhoto(){
   const ov=OV[pid]||{};
   return navBar(true,p.cat)+`<div style="padding:16px;max-width:440px;margin:0 auto;text-align:center;">
     <div style="font-size:18px;font-weight:700;margin-bottom:4px;">${p.name}</div>
-    <div style="font-size:13px;color:#cc0000;margin-bottom:24px;">${p.p1||''} — ${p.cat}</div>
+    <div style="font-size:13px;color:#cc0000;margin-bottom:24px;">${p.p1||''} — ${currentTeam(p)}</div>
     <div id="pPv" style="width:130px;height:160px;border-radius:12px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:48px;font-weight:700;color:#cc0000;margin:0 auto 20px;overflow:hidden;">
       ${ov.photo?`<img src="${ov.photo}" style="width:100%;height:100%;object-fit:cover;">`:`<span>${ini(p.name)}</span>`}
     </div>
@@ -3237,7 +3246,7 @@ function bMatchLogEdit(){
           <span style="font-size:12px;">Titulaire</span>
         </label>
       </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:8px;">Durée match ${p.cat} : ${matchDuration(p.cat)} min</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:8px;">Durée match ${currentTeam(p)} : ${matchDuration(currentTeam(p))} min</div>
     </div>
 
     <div class="card" style="padding:16px;margin-bottom:14px;">
@@ -3368,7 +3377,7 @@ function bFFRStats(){
 
   return navBar(true,p.cat)+`<div style="padding:16px;max-width:480px;margin:0 auto;">
     <div style="font-size:18px;font-weight:700;margin-bottom:4px;">${p.name}</div>
-    <div style="font-size:13px;color:#cc0000;margin-bottom:20px;">🏉 Stats Match FFR — ${p.cat}</div>
+    <div style="font-size:13px;color:#cc0000;margin-bottom:20px;">🏉 Stats Match FFR — ${currentTeam(p)}</div>
 
     <div class="card" style="padding:16px;margin-bottom:14px;">
       <div style="font-size:11px;color:#cc0000;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:14px;">Sélections</div>
@@ -3499,7 +3508,7 @@ function printProfile(id){
     <div class="photo">${ov.photo?`<img src="${ov.photo}">`:`${ini(p.name)}`}</div>
     <div style="flex:1;">
       <div class="name">${pFullDisplayName(p)}</div>
-      <div class="subtitle">${p.cat} — Génération ${p.gen}${p.dob?' — Né le '+fD(p.dob):''}</div>
+      <div class="subtitle">${currentTeam(p)} — Génération ${p.gen}${p.dob?' — Né le '+fD(p.dob):''}</div>
       <div class="info-grid">
         ${[['Poste 1',p.p1||'/'],['Poste 2',p.p2||'/'],['Statut Club',p.sc||'/'],['Statut FFR',p.sffr||'/'],['Taille',taille?taille+' cm':'/'],['Poids',poids?poids+' kg':'/']].map(([l,v])=>`
         <div class="info-item"><div class="info-label">${l}</div><div class="info-val">${v}</div></div>`).join('')}
@@ -4359,7 +4368,7 @@ function bQuestionnaire(){
       <div style="font-size:11px;color:#cc0000;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">👤 Ton nom</div>
       <input type="text" id="qSearch" placeholder="Tape ton nom pour filtrer..." oninput="filterQPlayers()" style="width:100%;margin-bottom:8px;">
       <select id="qPlayer" size="4" style="width:100%;height:90px;background:var(--surface2);border:1.5px solid var(--border);color:var(--text);border-radius:8px;padding:4px;font-size:13px;">
-        ${allPlayers.map(p=>`<option value="${p.id}|${pListName(p)}|${p.cat}">${pListName(p)} (${p.cat})</option>`).join('')}
+        ${allPlayers.map(p=>`<option value="${p.id}|${pListName(p)}|${p.cat}">${pListName(p)} (${currentTeam(p)})</option>`).join('')}
       </select>
     </div>
 
@@ -4461,7 +4470,7 @@ function filterQPlayers(){
   if(!sel)return;
   sel.innerHTML=[...ACTIVE_DB].sort(bySurname)
     .filter(p=>!q||p.name.includes(q))
-    .map(p=>`<option value="${p.id}|${pListName(p)}|${p.cat}">${pListName(p)} (${p.cat})</option>`)
+    .map(p=>`<option value="${p.id}|${pListName(p)}|${p.cat}">${pListName(p)} (${currentTeam(p)})</option>`)
     .join('');
 }
 
