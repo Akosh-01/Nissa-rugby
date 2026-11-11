@@ -78,6 +78,28 @@ img{display:block}
 .player-photo{width:100%;aspect-ratio:1;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:700;color:var(--primary);overflow:hidden}
 .player-photo img{width:100%;height:100%;object-fit:cover}
 /* Info */
+.pf-head{padding:16px;margin-bottom:14px;display:grid;grid-template-columns:250px 330px minmax(0,1fr);gap:22px;align-items:center}
+.pf-photo{height:360px;border-radius:14px;overflow:hidden;background:#242424;display:flex;align-items:center;justify-content:center;font-size:72px;font-weight:800;color:#cc0000;border:1px solid var(--border)}
+.pf-photo img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
+.pf-radar{min-width:0}
+.pf-info{min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center}
+.pf-name{font-size:30px;font-weight:900;text-transform:uppercase;line-height:1.05;letter-spacing:.5px;word-break:break-word}
+.pf-sub{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:14px;font-weight:700;color:#e23b3b}
+.pf-dot{width:4px;height:4px;border-radius:50%;background:#e23b3b;opacity:.6}
+.pf-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:16px}
+.pf-tile{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;min-width:0}
+.pf-tl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;font-weight:700}
+.pf-tv{font-size:19px;font-weight:800;margin-top:4px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:baseline;gap:2px}
+.pf-tv small{font-size:11px;color:var(--text-muted);font-weight:700}
+.pf-tv.pf-empty{color:#555}
+.pf-chart{margin-left:auto;font-size:13px}
+.pf-coqs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}
+.pf-coq{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 6px;text-align:center;min-width:0}
+.pf-coq .ic{height:38px;display:flex;align-items:flex-end;justify-content:center;gap:4px}
+.pf-coq .tn{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:5px}
+.pf-coq .tv{font-size:13px;font-weight:800;margin-top:1px}
+@media (max-width:1150px){.pf-head{grid-template-columns:230px minmax(0,1fr)}.pf-info{grid-column:1/-1}.pf-photo{height:300px}}
+@media (max-width:640px){.pf-head{grid-template-columns:1fr;gap:14px}.pf-photo{height:280px;max-width:240px;width:100%;margin:0 auto}.pf-name{font-size:24px;text-align:center}.pf-sub{justify-content:center}.pf-info>div:nth-child(3){text-align:center}.pf-tiles{grid-template-columns:repeat(2,minmax(0,1fr))!important}.pf-coqs{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .info-val{background:var(--surface2);padding:5px 8px;border-radius:6px;font-size:12px;font-weight:600;margin-top:2px;color:var(--text)}
 .test-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
 .test-score{background:var(--surface2);padding:5px 10px;border-radius:6px;font-size:14px;font-weight:700;min-width:62px;text-align:center;font-style:italic;color:var(--text)}
@@ -2453,7 +2475,7 @@ function ffrRadarSVG(p){
   const ang=i=>(-90+i*72)*Math.PI/180;
   const pt=(i,r)=>[cx+r*Math.cos(ang(i)),cy+r*Math.sin(ang(i))];
   const ring=(lv,col,op,dash)=>`<polygon points="${axes.map((_,i)=>pt(i,R*lv/4).map(n=>n.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${col}" stroke-opacity="${op}" stroke-width="1.2"${dash?' stroke-dasharray="3 3"':''}/>`;
-  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;display:block;margin:0 auto;" role="img" aria-label="Radar des tests par paliers FFR">`;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W+20}px;display:block;margin:0 auto;" role="img" aria-label="Radar des tests par paliers FFR">`;
   s+=ring(4,'#ffffff',.35)+ring(3,'#00b6ed',.75)+ring(2,'#01a12d',.75)+ring(1,'#ffcc02',.8);
   axes.forEach((a,i)=>{const[x,y]=pt(i,R);s+=`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#ffffff" stroke-opacity=".18"${a.club?' stroke-dasharray="3 3"':''}/>`;});
   const pts=axes.map((a,i)=>pt(i,R*Math.max(a.lv??0,0.08)/4));
@@ -2496,6 +2518,16 @@ function ffrBaremeHTML(p){
   </div>`;
 }
 
+function ffrCoqStripHTML(p){
+  const pi=ffrPosteIdx(p);if(pi<0)return'';
+  const items=Object.keys(FFR_BAREME).map(k=>{
+    const last=ffrLastValue(p,k), b=FFR_BAREME[k];
+    const g=last?ffrGrade(k,last.v,pi):null;
+    const val=last?(b.unit==='s'?last.v.toFixed(2):String(last.v)).replace('.',',')+' '+b.unit:'—';
+    return`<div class="pf-coq"><div class="ic">${g?ffrIcon(g.coq,36)+(g.medal?ffrIcon(g.medal,32):''):'<span style="color:#555;font-size:22px;line-height:36px;">—</span>'}</div><div class="tn">${b.label}</div><div class="tv"${last?'':' style="color:#555;"'}>${val}</div></div>`;
+  }).join('');
+  return`<div class="pf-coqs">${items}</div>`;
+}
 function bProfile(){
   const p=ACTIVE_DB.find(pl=>pl.id===pid);
   if(!p) return navBar(true)+'<div style="padding:16px;color:var(--text-muted);">Joueur introuvable.</div>';
@@ -2528,42 +2560,37 @@ function bProfile(){
 
   const infos=[['Poste 1',p.p1||'/'],['Poste 2',p.p2||'/'],['Statut Club',p.sc||'/'],['Statut FFR',p.sffr||'/'],['Taille (cm)',tv(taille)],['Pesé (kg)',tv(poids)]];
   if(p.age) infos.unshift(['Âge',p.age+' ans']);
-  if(p.dob) infos.unshift(['Né le',p.dob]);
+  if(p.dob) infos.unshift(['Né le',/^\d{4}-\d{2}-\d{2}/.test(p.dob)?p.dob.slice(0,10).split('-').reverse().join('/'):p.dob]);
 
   return navBar(true, p.cat)+`<div style="padding:14px;">
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;">
       <button onclick="printProfile('${p.id}')" class="btn-dark" style="font-size:13px;padding:8px 14px;border-radius:8px;">📄 Export PDF complet</button>
       ${isAdmin()?`<button onclick="view='photo';render()" class="btn-red" style="font-size:13px;padding:8px 16px;">📷 Photo</button>`:''}
     </div>
-    <div class="card" style="padding:14px;display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px;align-items:center;">
-      <div style="flex:0 1 340px;min-width:250px;margin:0 auto;">
+    <div class="card pf-head">
+      <div class="pf-photo">
+        ${ov.photo?`<img src="${ov.photo}" alt="${pFullDisplayName(p)}">`:`<span>${ini(p.name)}</span>`}
+      </div>
+      <div class="pf-radar">
         ${ffrRadarSVG(p)}
         <div style="text-align:center;margin-top:8px;"><button onclick="window._ffrBareme=!window._ffrBareme;render()" class="btn-dark" style="font-size:12px;padding:6px 12px;border-radius:8px;">📋 ${window._ffrBareme?'Masquer':'Voir'} les barèmes</button></div>
       </div>
-      <div style="flex:1 1 300px;min-width:0;">
-      <div style="display:flex;gap:14px;align-items:flex-start;">
-      <div style="width:100px;height:125px;border-radius:10px;background:#242424;display:flex;align-items:center;justify-content:center;font-size:42px;font-weight:700;color:#cc0000;flex-shrink:0;overflow:hidden;">
-        ${ov.photo?`<img src="${ov.photo}" style="width:100%;height:100%;object-fit:cover;">`:`<span>${ini(p.name)}</span>`}
-      </div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:19px;font-weight:800;text-transform:uppercase;word-break:break-word;">${pFullDisplayName(p)}</div>
-        <div style="font-size:12px;color:#cc0000;margin-top:3px;font-weight:600;">Génération ${p.gen} — ${p.cat}</div>
-        <div style="margin-top:6px;">${injuryStatusBadgeHTML(getPlayerInjuryStatus(p.name,p.gen))}</div>
-      </div></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-top:12px;">
+      <div class="pf-info">
+        <div class="pf-name">${pFullDisplayName(p)}</div>
+        <div class="pf-sub"><span>Génération ${p.gen}</span><span class="pf-dot"></span><span>${p.cat}</span>${p.p1&&p.p1!=='/'?`<span class="pf-dot"></span><span>${p.p1}</span>`:''}</div>
+        <div style="margin-top:8px;">${injuryStatusBadgeHTML(getPlayerInjuryStatus(p.name,p.gen))}</div>
+        <div class="pf-tiles" style="grid-template-columns:repeat(${infos.length>=8?4:3},minmax(0,1fr));">
           ${infos.map(([l,v])=>{
             const isPese=l==='Pesé (kg)';
-            const peseHist=t['Pesé']||[];
-            const canChartPese=isPese&&canChart(peseHist);
-            return`<div>
-              <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">${l}</div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <div class="info-val" style="flex:1;">${v}</div>
-                ${canChartPese?`<button onclick="sC('Pesé');" class="btn-red" style="padding:4px 8px;font-size:11px;border-radius:6px;flex-shrink:0;" title="Voir l'évolution du poids">📈</button>`:''}
-              </div>
+            const canChartPese=isPese&&canChart(t['Pesé']||[]);
+            const empty=v==='/'||v===''||v==null;
+            return`<div class="pf-tile"${canChartPese?` onclick="sC('Pesé');" style="cursor:pointer;" title="Voir l'évolution du poids"`:''}>
+              <div class="pf-tl">${l.replace(' (cm)','').replace(' (kg)','')}</div>
+              <div class="pf-tv${empty?' pf-empty':''}">${empty?'—':v}${!empty&&l==='Taille (cm)'?'<small> cm</small>':''}${!empty&&isPese?'<small> kg</small>':''}${canChartPese?'<span class="pf-chart">📈</span>':''}</div>
             </div>`;
           }).join('')}
         </div>
+        ${ffrCoqStripHTML(p)}
       </div>
     </div>
     ${window._ffrBareme?ffrBaremeHTML(p):''}
