@@ -2508,7 +2508,7 @@ function ffrRadarSVG(p){
   const ref=getEpauleRef();
   const ep=ffrLastValue(p,'1RM Epaulé');
   const axes=[
-    {k:'10m',l:'10 m'},{k:'50m',l:'50 m'},{k:'SQUAT',l:'Squat'},{k:'DC',l:'DC'},{k:'1RM Epaulé',l:'Épaulé',club:true}
+    {k:'10m',l:'10 m'},{k:'50m',l:'50 m'},{k:'SQUAT',l:'Squat'},{k:'DC',l:'DC'},{k:'YOYO',l:'Yo-Yo'}
   ].map(a=>{
     if(a.club){
       const lv=(ep&&ref)?Math.max(0,Math.min(4,(ep.v-ref.min)/(ref.max-ref.min)*4)):null;
@@ -2540,8 +2540,7 @@ function ffrRadarSVG(p){
   s+='</svg>';
   const note=pi<0?'<div style="font-size:11px;color:#e6791a;text-align:center;margin-top:4px;">Poste non reconnu : renseigne le Poste 1 pour situer le joueur sur le barème FFR.</div>':'';
   return s+`<div style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;font-size:10px;color:var(--text-muted);margin-top:2px;">
-    <span style="display:inline-flex;align-items:center;gap:3px;">${ffrIcon('jaune',18)} jaune</span><span style="display:inline-flex;align-items:center;gap:3px;">${ffrIcon('vert',18)} vert</span><span style="display:inline-flex;align-items:center;gap:3px;">${ffrIcon('bleu',18)} bleu</span><span style="display:inline-flex;align-items:center;gap:3px;">${ffrIcon('or',18)} bord = or</span></div>
-    <div style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:3px;">* Épaulé : du moins bon au meilleur résultat du club${ref?` (${String(ref.min).replace('.',',')} → ${String(ref.max).replace('.',',')} kg)`:''}</div>${note}`;
+    <span style="display:inline-flex;align-items:center;gap:3px;">${ffrIcon('jaune',18)} jaune</span><span style="display:inline-flex;align-items:center;gap:3px;">${ffrIcon('vert',18)} vert</span><span style="display:inline-flex;align-items:center;gap:3px;">${ffrIcon('bleu',18)} bleu</span><span style="display:inline-flex;align-items:center;gap:3px;">${ffrIcon('or',18)} bord = or</span></div>${note}`;
 }
 function ffrBaremeHTML(p){
   const sel=window._ffrBaremePi??Math.max(0,ffrPosteIdx(p));
