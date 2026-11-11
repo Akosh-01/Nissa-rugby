@@ -102,6 +102,17 @@ img{display:block}
 @media (max-width:640px){.pf-head{grid-template-columns:1fr;gap:14px}.pf-photo{height:280px;max-width:240px;width:100%;margin:0 auto}.pf-name{font-size:24px;text-align:center}.pf-sub{justify-content:center}.pf-info>div:nth-child(3){text-align:center}.pf-tiles{grid-template-columns:repeat(2,minmax(0,1fr))!important}.pf-coqs{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .info-val{background:var(--surface2);padding:5px 8px;border-radius:6px;font-size:12px;font-weight:600;margin-top:2px;color:var(--text)}
 .test-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
+.tr-grid{display:grid;grid-template-columns:minmax(0,1fr) 96px 104px 128px 44px;gap:10px;align-items:center}
+.tr-name{font-size:13px;color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tr-badges{display:flex;justify-content:flex-end;align-items:center}
+.tr-badges>span{margin-right:0!important}
+.tr-score{display:flex;flex-direction:column;align-items:stretch;gap:2px}
+.tr-score .test-score{display:block;position:relative}
+.tr-rm{font-size:8px;font-style:normal;font-weight:800;color:#e23b3b;margin-left:3px;vertical-align:super}
+.tr-est{font-size:9px;color:var(--text-muted);text-align:center;white-space:nowrap}
+.tr-date{font-size:10px;color:var(--text-muted);text-align:right;white-space:nowrap}
+.tr-btn{width:44px;padding:5px 0!important;font-size:12px;border-radius:6px;text-align:center}
+@media (max-width:640px){.tr-grid{grid-template-columns:minmax(0,1fr) 70px 86px 32px;gap:6px}.tr-date{display:none}.tr-badges img{height:26px!important}}
 .test-score{background:var(--surface2);padding:5px 10px;border-radius:6px;font-size:14px;font-weight:700;min-width:62px;text-align:center;font-style:italic;color:var(--text)}
 /* Buttons */
 .btn-red{background:var(--primary);color:#fff;border:none;padding:10px 20px;border-radius:9px;font-size:14px;font-weight:700}
@@ -2412,9 +2423,34 @@ function ffrPosteIdx(p){
   const a=one(p&&p.p1);return a>=0?a:one(p&&p.p2);
 }
 // Dernière valeur exploitable d'un test (on ignore les 5RM : le barème FFR porte sur la charge maximale)
+// Squat / DC : nos tests sont des xRM (5RM en Alamercery, 3RM en Crabos) alors que le barème FFR est en 1RM.
+// Conversion par le tableau %1RM de la NSCA : 3RM ≈ 93 % du 1RM, 5RM ≈ 87 % du 1RM.
+const RM_PCT={1:1,2:0.95,3:0.93,4:0.90,5:0.87,6:0.85};
+const RM_TESTS=['SQUAT','DC'];
+function testReps(p,key,e){
+  if(!RM_TESTS.includes(key))return 1;
+  const m=String((e&&e[2])||'').match(/^(\d)RM$/i);
+  if(m)return parseInt(m[1]);
+  // Pas d'indication : équipe du joueur la saison du test (Crabos = 3RM, sinon 5RM)
+  const season=smSeasonOfDate(e&&e[0]);
+  const sd=SEASON_ROSTERS[season]||{};
+  let team=['Crabos','Alamercery','Gauderman'].find(t=>(sd[t]||[]).includes(p.id));
+  if(!team){
+    if(sd&&Object.keys(sd).length&&p.gen){const y=parseInt(season);team=(y-p.gen)>=16?'Crabos':'Alamercery';}
+    else team=p.cat==='Crabos'?'Crabos':'Alamercery';
+  }
+  return team==='Crabos'?3:5;
+}
+function est1RM(v,reps){const pct=RM_PCT[reps]||(1/(1+reps/30));return Math.round(v/pct*2)/2;}
 function ffrLastValue(p,key){
   const h=((p&&p.t)||{})[key]||[];
-  for(let i=h.length-1;i>=0;i--){const e=h[i];if(e&&typeof e[1]==='number'&&!isNaN(e[1])&&e[2]!=='5RM')return{date:e[0],v:e[1]};}
+  for(let i=h.length-1;i>=0;i--){
+    const e=h[i];
+    if(e&&typeof e[1]==='number'&&!isNaN(e[1])){
+      const reps=testReps(p,key,e);
+      return{date:e[0],raw:e[1],reps,v:reps>1?est1RM(e[1],reps):e[1]};
+    }
+  }
   return null;
 }
 // Coq + médaille obtenus (palier inférieur quand on est entre deux)
@@ -2440,7 +2476,7 @@ function ffrRadarLevel(key,v,pi){
 var epauleClubRef=null;try{epauleClubRef=JSON.parse(localStorage.getItem('nr-epaule-ref')||'null');}catch(e){}
 function getEpauleRef(){
   const vals=[];
-  (ACTIVE_DB||[]).forEach(p=>((p.t||{})['1RM Epaulé']||[]).forEach(e=>{if(e&&typeof e[1]==='number'&&e[1]>0&&e[2]!=='5RM')vals.push(e[1]);}));
+  (ACTIVE_DB||[]).forEach(p=>((p.t||{})['1RM Epaulé']||[]).forEach(e=>{if(e&&typeof e[1]==='number'&&e[1]>0)vals.push(e[1]);}));
   if(vals.length>=2&&Math.max(...vals)>Math.min(...vals)&&(ACTIVE_DB||[]).length>1){
     const ref={min:Math.min(...vals),max:Math.max(...vals)};
     if(!epauleClubRef||epauleClubRef.min!==ref.min||epauleClubRef.max!==ref.max){
@@ -2469,7 +2505,7 @@ function ffrRadarSVG(p){
       return{...a,v:ep?ep.v:null,unit:'kg',lv};
     }
     const last=ffrLastValue(p,a.k);
-    return{...a,v:last?last.v:null,unit:FFR_BAREME[a.k].unit,lv:last&&pi>=0?ffrRadarLevel(a.k,last.v,pi):null};
+    return{...a,v:last?last.v:null,est:!!(last&&last.reps>1),unit:FFR_BAREME[a.k].unit,lv:last&&pi>=0?ffrRadarLevel(a.k,last.v,pi):null};
   });
   const W=320,H=290,cx=160,cy=148,R=98;
   const ang=i=>(-90+i*72)*Math.PI/180;
@@ -2487,7 +2523,7 @@ function ffrRadarSVG(p){
     const[x,y]=pt(i,R+20);
     const anchor=Math.abs(x-cx)<10?'middle':(x>cx?'start':'end');
     const dy=i===0?-6:(y>cy?10:0);
-    const val=a.v!==null?(a.unit==='s'?a.v.toFixed(2):String(a.v)).replace('.',',')+' '+a.unit:'—';
+    const val=a.v!==null?(a.est?'≈ ':'')+(a.unit==='s'?a.v.toFixed(2):String(a.v)).replace('.',',')+' '+a.unit+(a.est?' (1RM)':''):'—';
     s+=`<text x="${x.toFixed(1)}" y="${(y+dy).toFixed(1)}" text-anchor="${anchor}" font-size="11" font-weight="700" fill="#ffffff">${a.l}${a.club?'*':''}</text>`;
     s+=`<text x="${x.toFixed(1)}" y="${(y+dy+13).toFixed(1)}" text-anchor="${anchor}" font-size="10" fill="#9a9a9a">${val}</text>`;
   });
@@ -2514,7 +2550,7 @@ function ffrBaremeHTML(p){
       ${FFR_LEVELS.map((l,r)=>`<tr style="border-top:1px solid var(--border);${r<3?'background:rgba(0,120,255,.06);':''}"><td style="padding:5px 4px;">${ffrIcon(l,26)}</td>${keys.map(k=>`<td style="padding:5px 4px;font-weight:${r<3?800:600};">${f(FFR_BAREME[k].rows[r][sel],k)}</td>`).join('')}</tr>`).join('')}
       <tr style="border-top:1px solid var(--border);"><td style="padding:5px 4px;">${ffrIcon('rouge',26)}</td>${keys.map(()=>'<td style="color:var(--text-muted);font-size:11px;">en dessous</td>').join('')}</tr>
     </table></div>
-    <div style="font-size:10px;color:var(--text-muted);margin-top:8px;">Entre deux paliers, on attribue le palier inférieur. Coq et médaille sont indépendants. Les résultats en 5RM ne sont pas notés.</div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:8px;">Entre deux paliers, on attribue le palier inférieur. Coq et médaille sont indépendants. Squat et DC : les 3RM (Crabos) et 5RM (Alamercery) sont convertis en 1RM estimé (NSCA : 3RM ≈ 93 %, 5RM ≈ 87 % du 1RM).</div>
   </div>`;
 }
 
@@ -2523,8 +2559,8 @@ function ffrCoqStripHTML(p){
   const items=Object.keys(FFR_BAREME).map(k=>{
     const last=ffrLastValue(p,k), b=FFR_BAREME[k];
     const g=last?ffrGrade(k,last.v,pi):null;
-    const val=last?(b.unit==='s'?last.v.toFixed(2):String(last.v)).replace('.',',')+' '+b.unit:'—';
-    return`<div class="pf-coq"><div class="ic">${g?ffrIcon(g.coq,36)+(g.medal?ffrIcon(g.medal,32):''):'<span style="color:#555;font-size:22px;line-height:36px;">—</span>'}</div><div class="tn">${b.label}</div><div class="tv"${last?'':' style="color:#555;"'}>${val}</div></div>`;
+    const val=last?(last.reps>1?'≈ ':'')+(b.unit==='s'?last.v.toFixed(2):String(last.v)).replace('.',',')+' '+b.unit:'—';
+    return`<div class="pf-coq"><div class="ic">${g?ffrIcon(g.coq,36)+(g.medal?ffrIcon(g.medal,32):''):'<span style="color:#555;font-size:22px;line-height:36px;">—</span>'}</div><div class="tn">${b.label}${last&&last.reps>1?' 1RM':''}</div><div class="tv"${last?'':' style="color:#555;"'}>${val}</div></div>`;
   }).join('');
   return`<div class="pf-coqs">${items}</div>`;
 }
@@ -2539,15 +2575,16 @@ function bProfile(){
     const h=t[name];if(!h||!h.length)return'';
     const last=lat(h);
     const dt=last[0],sc=last[1],rm=last[2];
-    return`<div class="test-row">
-      <span style="font-size:13px;color:var(--text-muted);flex:1;">${name}</span>
-      ${rm==='5RM'?`<span style="font-size:9px;background:var(--primary-light);color:var(--primary-dark);font-weight:700;padding:2px 6px;border-radius:8px;margin-right:6px;">5RM</span>`:''}
-      ${ffrBadgesHTML(p,name,34)}
-      <span class="test-score">${tv(sc)}</span>
-      <span style="font-size:10px;color:var(--text-muted);min-width:30px;text-align:right;">${fD(dt)}</span>
+    const reps=RM_TESTS.includes(name)?testReps(p,name,last):1;
+    const est=reps>1&&typeof sc==='number'?est1RM(sc,reps):null;
+    return`<div class="test-row tr-grid">
+      <span class="tr-name">${name}</span>
+      <span class="tr-badges">${ffrBadgesHTML(p,name,34)}</span>
+      <span class="tr-score"><span class="test-score">${tv(sc)}${reps>1?`<sup class="tr-rm">${reps}RM</sup>`:''}</span>${est!==null?`<span class="tr-est">≈ ${String(est).replace('.',',')} kg 1RM</span>`:''}</span>
+      <span class="tr-date">${fD(dt)}</span>
       ${canChart(h)
-        ?`<button onclick="sC('${name.replace(/'/g,"\\'")}');" class="btn-red" style="padding:5px 10px;font-size:12px;border-radius:6px;flex-shrink:0;">📈</button>`
-        :`<div style="width:42px;"></div>`}
+        ?`<button onclick="sC('${name.replace(/'/g,"\\'")}');" class="btn-red tr-btn">📈</button>`
+        :`<span class="tr-btn"></span>`}
     </div>`;
   }
   function tBlock(title,icon,tests){
