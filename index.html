@@ -1082,7 +1082,7 @@ function quickImport(){
 
 const SEASONS_LIST=['2024-2025','2025-2026','2026-2027'];
 const CURRENT_SEASON=SEASONS_LIST[2]; // 2026-2027 est la saison en cours (nous sommes en août 2026)
-const SEASON_ROSTERS={"2024-2025":{"Gauderman":["p1","p4","p5","p6","p8","p15","r2_0","r2_1","p20","r2_2","p22","p24","p27","r2_3","p33","r2_4","p35","r2_5","p38","p42","r2_6","p43","p47","p48","r2_7","p53","p54","p55","r2_8","r2_9","p57","p58","p60","p63","p64","r2_10","p71","p72"]},"2025-2026":{"Gauderman":["p2","p7","p10","p11","p12","p13","p16","p18","p25","p26","p29","p31","p32","p34","p37","p41","p45","p49","p50","p51","p52","p56","p59","p65","p66","p67","p68","p70","p73"],"Alamercery":["p22","p33","p53","p35","p60","r2_11","p72","p5","r2_2","r2_0","p27","p40","p57","p15","p23","p55","p47","p71","p58","p30","p54","p4","p43","p64","p20","p1","r2_5","p6","p38","p14","p28","p42","p48","p63","p39","p24","p19","r2_12","p8","p46"],"Académie":["p1","p4","p55","p30","p38","p48","r2_13","r2_14","r2_15","r2_16","r2_17","r2_18","r2_19","r2_20","r2_21"]},"2026-2027":{"Alamercery":["p50","r2_22","p12","r2_23","p11","r2_24","r2_25","r2_26","p73","p7","r2_27","r2_28","p66","r2_29","p67","r2_30","p29","p41","p49","p68","r2_31","p69","p26","r2_32","r2_33","p44","p52","impgau74","p32","r2_35","p18","p16","r2_36","r2_37","p10","r2_38","p65"],"Crabos":["r2_61","r2_39","p71","p55","r2_40","p47","r2_41","r2_42","r2_43","r2_44","r2_19","p35","p22","p33","r2_45","r2_46","r2_16","r2_47","p15","p4","r2_1","r2_48","r2_49","p27","r2_15","p53","p58","r2_50","p48","p28","r2_51","r2_52","p63","p19","p1","p6","r2_53","r2_54","r2_55","r2_14","p38","p14","r2_60","p30","p46","p40","r2_57","r2_17","p43","r2_59"],"Académie":["p1","r2_43","p4","r2_57","p11","p16","r2_33","p19","p30","r2_15","r2_16","r2_46","p38","p41","r2_14","p44","p46","p48","r2_17","r2_55","p55","r2_59","r2_60","r2_45","r2_52"]}};
+const SEASON_ROSTERS={"2024-2025":{"Gauderman":["p1","p4","p5","p6","p8","p15","r2_0","r2_1","p20","r2_2","p22","p24","p27","r2_3","p33","r2_4","p35","r2_5","p38","p42","r2_6","p43","p47","p48","r2_7","p53","p54","p55","r2_8","r2_9","p57","p58","p60","p63","p64","r2_10","p71","p72"]},"2025-2026":{"Gauderman":["p2","p7","p10","p11","p12","p13","p16","p18","p25","p26","p29","p31","p32","p34","p37","p41","p45","p49","p50","p51","p52","p56","p59","p65","p66","p67","p68","p70","p73"],"Alamercery":["p22","p33","p53","p35","p60","r2_11","p72","p5","r2_2","r2_0","p27","p40","p57","p15","p23","p55","p47","p71","p58","p30","p54","p4","p43","p64","p20","p1","r2_5","p6","p38","p14","p28","p42","p48","p63","p39","p24","p19","r2_12","p8","p46"],"Académie":["p1","p4","p55","p30","p38","p48","r2_13","r2_14","r2_15","r2_16","r2_17","r2_52","r2_19","r2_20","r2_21"]},"2026-2027":{"Alamercery":["p50","r2_22","p12","r2_23","p11","r2_24","r2_25","r2_26","p73","p7","r2_27","r2_28","p66","r2_29","p67","r2_30","p29","p41","p49","p68","r2_31","p69","p26","r2_32","r2_33","p44","p52","impgau74","p32","r2_35","p18","p16","r2_36","r2_37","p10","r2_38","p65"],"Crabos":["r2_61","r2_39","p71","p55","r2_40","p47","r2_41","r2_42","r2_43","r2_44","r2_19","p35","p22","p33","r2_45","r2_46","r2_16","r2_47","p15","p4","r2_1","r2_48","r2_49","p27","r2_15","p53","p58","r2_50","p48","p28","r2_51","r2_52","p63","p19","p1","p6","r2_53","r2_54","r2_55","r2_14","p38","p14","r2_60","p30","p46","p40","r2_57","r2_17","p43","r2_59"],"Académie":["p1","r2_43","p4","r2_57","p11","p16","r2_33","p19","p30","r2_15","r2_16","r2_46","p38","p41","r2_14","p44","p46","p48","r2_17","r2_55","p55","r2_59","r2_60","r2_45","r2_52"]}};
 
 // Résout window._ctxCat/window._ctxSaison AVANT tout calcul de liste de joueurs,
 // pour garantir que toutes les pages (compteur, grilles, etc.) utilisent la même valeur cohérente.
@@ -1650,11 +1650,58 @@ async function secureBoot(){
   setAuthProfile(r.profile);
   await secureEnter();
 }
+
+// ═══════════════════════════════════════════════════════
+//  CORRECTIONS / AJOUTS DE DONNÉES (appliqués à l'ouverture par l'admin)
+//  Chaque opération est sans effet si elle a déjà été faite :
+//   add   : ajoute un résultat s'il n'y a pas déjà ce test à ±21 jours
+//   set   : remplace une valeur précise (seulement si l'ancienne valeur est encore là)
+//   merge : fusionne deux fiches du même joueur (résultats + alias de nom)
+//  Tests acad / Crabos de septembre 2026 + poids/taille du 11/11/2026.
+// ═══════════════════════════════════════════════════════
+const DATA_PATCHES=[["merge", "r2_18", "r2_52"], ["add", "p1", "1RM Epaulé", "2026-09-23", 80, null], ["add", "p1", "SQUAT", "2026-09-23", 120, "3RM"], ["add", "r2_43", "DC", "2026-09-23", 110, "3RM"], ["add", "r2_43", "1RM Epaulé", "2026-09-23", 115, null], ["add", "r2_43", "SQUAT", "2026-09-23", 160, "3RM"], ["add", "p4", "1RM Epaulé", "2026-09-23", 90, null], ["add", "p4", "SQUAT", "2026-09-23", 100, "3RM"], ["add", "p19", "1RM Epaulé", "2026-09-23", 70, null], ["add", "p19", "SQUAT", "2026-09-23", 90, "3RM"], ["add", "p30", "1RM Epaulé", "2026-09-23", 110, null], ["add", "p30", "SQUAT", "2026-09-23", 140, "3RM"], ["add", "r2_16", "1RM Epaulé", "2026-09-23", 105, null], ["add", "r2_16", "SQUAT", "2026-09-23", 140, "3RM"], ["add", "p38", "1RM Epaulé", "2026-09-23", 85, null], ["add", "p38", "SQUAT", "2026-09-23", 120, "3RM"], ["add", "r2_14", "DC", "2026-09-23", 82, "3RM"], ["add", "r2_14", "1RM Epaulé", "2026-09-23", 85, null], ["add", "r2_14", "SQUAT", "2026-09-23", 120, "3RM"], ["add", "p46", "1RM Epaulé", "2026-09-23", 70, null], ["add", "p46", "SQUAT", "2026-09-23", 115, "3RM"], ["add", "p48", "1RM Epaulé", "2026-09-23", 70, null], ["add", "p48", "SQUAT", "2026-09-23", 130, "3RM"], ["add", "r2_17", "1RM Epaulé", "2026-09-23", 85, null], ["add", "r2_17", "SQUAT", "2026-09-23", 120, "3RM"], ["add", "p55", "1RM Epaulé", "2026-09-23", 95, null], ["add", "p55", "SQUAT", "2026-09-23", 125, "3RM"], ["add", "r2_59", "1RM Epaulé", "2026-09-23", 96, null], ["add", "r2_59", "SQUAT", "2026-09-23", 120, "3RM"], ["add", "r2_52", "1RM Epaulé", "2026-09-23", 85, null], ["add", "r2_52", "SQUAT", "2026-09-23", 120, "3RM"], ["add", "r2_53", "10m", "2026-09-23", 1.71, null], ["add", "p48", "10m", "2026-09-23", 1.76, null], ["add", "p48", "20m", "2026-09-23", 3.08, null], ["add", "p1", "Pesé", "2026-11-11", 76.1, null], ["add", "p1", "Taille", "2026-11-11", 178, null], ["add", "r2_57", "Pesé", "2026-11-11", 79.2, null], ["add", "r2_57", "Taille", "2026-11-11", 180, null], ["add", "p11", "Pesé", "2026-11-11", 65.4, null], ["add", "p11", "Taille", "2026-11-11", 163, null], ["add", "p16", "Pesé", "2026-11-11", 71, null], ["add", "p16", "Taille", "2026-11-11", 173.5, null], ["add", "r2_33", "Pesé", "2026-11-11", 74.3, null], ["add", "r2_33", "Taille", "2026-11-11", 176, null], ["add", "p19", "Pesé", "2026-11-11", 67.7, null], ["add", "r2_15", "Pesé", "2026-11-11", 91.4, null], ["add", "r2_15", "Taille", "2026-11-11", 187, null], ["add", "r2_16", "Pesé", "2026-11-11", 98.7, null], ["add", "r2_46", "Pesé", "2026-11-11", 86.9, null], ["add", "p38", "Pesé", "2026-11-11", 73.3, null], ["add", "p38", "Taille", "2026-11-11", 181.5, null], ["add", "p41", "Taille", "2026-11-11", 171, null], ["add", "p44", "Pesé", "2026-11-11", 61.3, null], ["add", "p44", "Taille", "2026-11-11", 170, null], ["add", "p46", "Pesé", "2026-11-11", 66.9, null], ["add", "p46", "Taille", "2026-11-11", 170, null], ["add", "r2_55", "Pesé", "2026-11-11", 87.1, null], ["add", "r2_59", "Pesé", "2026-11-11", 84.6, null], ["add", "r2_59", "Taille", "2026-11-11", 186, null], ["add", "r2_60", "Pesé", "2026-11-11", 91.9, null], ["add", "r2_60", "Taille", "2026-11-11", 182, null], ["add", "p58", "Taille", "2026-11-11", 186, null], ["set", "p1", "DC", "2026-09-23", 80, "3RM", "2x85"], ["set", "r2_59", "DC", "2026-09-23", 87.5, "3RM", "2x90"], ["set", "r2_14", "Tirage planche", "2026-09-23", 80, "3RM", 89], ["set", "r2_50", "10m", "2026-09-23", 1.71, null, 1.76]];
+function _daysApart(a,b){return Math.abs((new Date(String(a).slice(0,10))-new Date(String(b).slice(0,10)))/864e5);}
+function applyDataPatches(){
+  if(!Array.isArray(ACTIVE_DB)||!ACTIVE_DB.length)return false;
+  let changed=false;
+  const byId=id=>ACTIVE_DB.find(p=>p&&p.id===id);
+  for(const op of DATA_PATCHES){
+    if(op[0]==='merge'){
+      const from=byId(op[1]), to=byId(op[2]);
+      if(!from||!to)continue;
+      to.t=to.t||{};
+      for(const[k,arr]of Object.entries(from.t||{})){
+        to.t[k]=to.t[k]||[];
+        for(const e of arr)if(!to.t[k].some(x=>x[0]===e[0]&&x[1]==e[1]))to.t[k].push(e);
+        to.t[k].sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+      }
+      to.aliases=[...new Set([...(to.aliases||[]),from.name,...(from.aliases||[])])];
+      if(from.sc==='Académie'&&!to.sc)to.sc='Académie';
+      ACTIVE_DB.splice(ACTIVE_DB.indexOf(from),1);
+      changed=true;continue;
+    }
+    const[kind,pid,test,date,val,rm,old]=op;
+    const p=byId(pid);if(!p)continue;
+    p.t=p.t||{};const arr=p.t[test]=p.t[test]||[];
+    const entry=rm?[date,val,rm]:[date,val];
+    if(kind==='add'){
+      if(arr.some(e=>e&&_daysApart(e[0],date)<=21))continue;
+      arr.push(entry);arr.sort((a,b)=>String(a[0]).localeCompare(String(b[0])));changed=true;
+    }else if(kind==='set'){
+      const e=arr.find(e=>e&&_daysApart(e[0],date)<=21&&String(e[1])===String(old));
+      if(!e)continue;
+      e[1]=val;if(rm)e[2]=rm;else e.length=2;changed=true;
+    }
+  }
+  if(changed){try{localStorage.setItem('nr-db',JSON.stringify(ACTIVE_DB));}catch(e){} secureQueueDbPush();}
+  return changed;
+}
 async function secureEnter(){
   document.getElementById('root').innerHTML=authShell('<div style="text-align:center;color:#aaa;">⏳ Chargement de tes données…</div>');
   const b=await api('data',{set:'base'});
   const db=b&&b.status==='ok'&&Array.isArray(b.data)?b.data:[];
   BASE_DB=db;ACTIVE_DB=db;
+  if(authProfile.role==='admin'){try{applyDataPatches();}catch(e){console.warn('patch',e);}}
   if(authProfile.role==='joueur'&&db[0]){window._ctxSaison=CURRENT_SEASON;window._ctxCat=authPlayerTeam();cat=window._ctxCat;}
   clearInterval(authHeartbeat);
   authHeartbeat=setInterval(async()=>{try{const r=await api('me');if(r.status==='ok'){authProfile=Object.assign(authProfile,r.profile);currentUser.pages=r.profile.pages;}}catch(e){}},60000);
@@ -6203,7 +6250,7 @@ function resolveDbPlayer(name){
   const pool=ACTIVE_DB.filter(p=>p&&p.cat!=='Archivé');
   let res=null;
   const ck=canonicalNameKey(key);
-  const exact=pool.filter(p=>canonicalNameKey(p.name)===ck);
+  const exact=pool.filter(p=>canonicalNameKey(p.name)===ck||(p.aliases||[]).some(a=>canonicalNameKey(a)===ck));
   if(exact.length===1)res=exact[0];
   else if(!exact.length){
     const W=_nameTokens(key);
@@ -10763,7 +10810,19 @@ function importTests(e){
       for(const [nm,tests] of Object.entries(playerTests)){
         const idx=findPlayerIndexByName(newDB,playerDisplayName[nm]);
         if(idx>=0){
-          newDB[idx]={...newDB[idx],t:{...newDB[idx].t,...tests}};
+          // FUSION : on ajoute aux résultats existants sans rien effacer.
+          // Même test à ±21 jours avec la même valeur = doublon → ignoré.
+          const cur={...(newDB[idx].t||{})};
+          for(const[tn,entries]of Object.entries(tests)){
+            const arr=(cur[tn]||[]).slice();
+            for(const e of entries){
+              if(arr.some(x=>x&&String(x[1])===String(e[1])&&_daysApart(x[0],e[0])<=21))continue;
+              arr.push(e);
+            }
+            arr.sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+            cur[tn]=arr;
+          }
+          newDB[idx]={...newDB[idx],t:cur};
           updated++;
         } else {
           skipped++;
@@ -11066,6 +11125,8 @@ function findPlayerIndexByName(list,searchName){
   const target=canonicalNameKey(searchName);
   if(!target)return-1;
   let idx=list.findIndex(p=>canonicalNameKey(p.name)===target);
+  if(idx>=0)return idx;
+  idx=list.findIndex(p=>(p.aliases||[]).some(al=>canonicalNameKey(al)===target));
   if(idx>=0)return idx;
   // Repli : au moins un mot significatif (≥3 lettres) en commun
   const searchWords=nameWords(searchName).filter(w=>w.length>=3);
