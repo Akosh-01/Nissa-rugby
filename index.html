@@ -7696,7 +7696,7 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
     // Statut affiché dans l'infobulle : réhab si c'est l'étape actuelle, sinon blessé
     const status=injuryStepStatus(x)==='rehabilitation'?'rehabilitation':'blesse';
     if(!rangesByPlayer[key])rangesByPlayer[key]=[];
-    rangesByPlayer[key].push([d0,d1,status]);
+    rangesByPlayer[key].push([d0,d1,status,x]);
     dbgBuilt++;
   });
   window._weeklyAvailDebug={dbgTotal,dbgNoDateSkipped,dbgNoPlayerMatch,dbgBuilt,sample:allInjuriesForRoster.slice(0,3).map(x=>({nom:x.nom,gen:x.gen,date:x.date,etape:x.etape,retour:x.retour,source:x.source}))};
@@ -7716,13 +7716,18 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
   let weekStart=new Date(start);
   while(weekStart<=today){
     const weekEndReal=new Date(weekStart);weekEndReal.setDate(weekEndReal.getDate()+6); // dimanche réel (affichage/matchs uniquement)
-    const blessesNames=[],rehabNames=[];
+    const blessesNames=[],rehabNames=[],details=[];
     roster.forEach(p=>{
       const ranges=rangesByPlayer[p.id]||[];
-      const active=ranges.find(([d0,d1])=>d0<weekStart&&d1>weekStart);
+      const actives=ranges.filter(([d0,d1])=>d0<weekStart&&d1>weekStart);
+      const active=actives.find(a=>a[2]!=='rehabilitation')||actives[0];
       if(active){
         if(active[2]==='rehabilitation')rehabNames.push(p.name);
         else blessesNames.push(p.name);
+        const x=active[3]||{};
+        details.push({name:p.name,full:typeof pFullDisplayName==='function'?pFullDisplayName(p):p.name,status:active[2],
+          loc:x.loc||'',type:x.type||'',date:x.date||'',retour:x.retour||'',
+          days:Math.round((weekStart-active[0])/864e5)});
       }
     });
     const unavailableNames=[...blessesNames,...rehabNames];
@@ -7740,7 +7745,7 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
 
     weeks.push({
       label:`${weekStart.getDate()}/${weekStart.getMonth()+1}`,
-      pct,pctDisplay,unavailable,total:roster.length,unavailableNames,blessesNames,rehabNames,
+      pct,pctDisplay,unavailable,total:roster.length,unavailableNames,blessesNames,rehabNames,details,
       opponent:weekMatch?parseMatchEvent(weekMatch).opponent:null,
       isCurrent:weekEndReal>=today
     });
@@ -7793,6 +7798,57 @@ function showWeekTooltip(evt,idx){
   tt.style.left=Math.max(4,Math.min(x,rect.width-270))+'px';
   tt.style.top=y+'px';
   tt.style.display='block';
+}
+// Clic sur un point : panneau détaillé sous le graphique (reste affiché jusqu'au prochain clic)
+function showWeekDetail(el,idx){
+  const card=el.closest('.card');if(!card)return;
+  const panel=card.querySelector('.week-detail-panel');
+  const tt=card.querySelector('#weekAvailTooltip');
+  let weeks;try{weeks=JSON.parse(tt.dataset.weekly);}catch(e){return;}
+  const w=weeks[idx];if(!w)return;
+  card.querySelectorAll('circle.wk-sel').forEach(c=>{c.classList.remove('wk-sel');c.setAttribute('stroke','#fff');c.setAttribute('stroke-width','1.5');});
+  if(panel.dataset.idx===String(idx)&&panel.innerHTML){panel.innerHTML='';panel.dataset.idx='';return;}
+  el.classList.add('wk-sel');el.setAttribute('stroke','#ffcc02');el.setAttribute('stroke-width','3');
+  panel.dataset.idx=String(idx);
+  const prev=weeks[idx-1];
+  const nowOut=new Set(w.unavailableNames||[]),prevOut=new Set(prev?prev.unavailableNames||[]:[]);
+  const nouveaux=prev?[...nowOut].filter(n=>!prevOut.has(n)):[];
+  const retours=prev?[...prevOut].filter(n=>!nowOut.has(n)):[];
+  const full=n=>{const d=[...(w.details||[]),...((prev&&prev.details)||[])].find(x=>x.name===n);return d?d.full:n;};
+  const fd=s=>{if(!s)return'';const d=new Date(s);return isNaN(d)?s:String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');};
+  const card1=(d)=>{
+    const isNew=nouveaux.includes(d.name);
+    const col=d.status==='rehabilitation'?'var(--alert-watch)':'var(--primary)';
+    return`<div style="display:flex;gap:10px;align-items:flex-start;background:var(--surface2);border:1px solid var(--border);border-left:4px solid ${col};border-radius:8px;padding:9px 11px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:800;">${d.full}${isNew?' <span style="font-size:9px;background:var(--primary);color:#fff;padding:1px 6px;border-radius:6px;vertical-align:middle;">NOUVEAU</span>':''}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${[d.loc,d.type].filter(Boolean).join(' · ')||'Blessure non détaillée'}</div>
+      </div>
+      <div style="text-align:right;font-size:10px;color:var(--text-muted);white-space:nowrap;">
+        ${d.date?`depuis le ${fd(d.date)}`:'arrivé blessé'}<br><strong style="color:${col};">${d.days>0?'J+'+d.days:''}</strong>
+      </div>
+    </div>`;
+  };
+  const list=(label,status,color,icon)=>{
+    const arr=(w.details||[]).filter(d=>status==='rehabilitation'?d.status==='rehabilitation':d.status!=='rehabilitation').sort((a,b)=>a.full.localeCompare(b.full));
+    if(!arr.length)return'';
+    return`<div style="margin-top:12px;"><div style="font-size:11px;font-weight:800;color:${color};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">${icon} ${label} (${arr.length})</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px;">${arr.map(card1).join('')}</div></div>`;
+  };
+  const avail=w.total-w.unavailable;
+  panel.innerHTML=`<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div style="font-size:15px;font-weight:800;">Semaine du ${w.label}</div>
+      <div style="font-size:13px;font-weight:800;color:${w.pct>=80?'var(--alert-ok)':w.pct>=60?'var(--alert-watch)':'var(--primary)'};">${w.pctDisplay}% disponibles · ${avail}/${w.total}</div>
+      ${w.opponent?`<div style="font-size:11px;color:var(--text-muted);">⚔️ ${w.opponent}</div>`:''}
+      <button onclick="const p=this.closest('.week-detail-panel');p.innerHTML='';p.dataset.idx='';this.closest('.card').querySelectorAll('circle.wk-sel').forEach(c=>{c.classList.remove('wk-sel');c.setAttribute('stroke','#fff');c.setAttribute('stroke-width','1.5');});" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;">✕ Fermer</button>
+    </div>
+    ${prev?`<div style="margin-top:8px;font-size:12px;color:var(--text-muted);">vs semaine du ${prev.label} : <strong style="color:var(--primary);">+${nouveaux.length} indisponible${nouveaux.length>1?'s':''}</strong> · <strong style="color:var(--alert-ok);">${retours.length} retour${retours.length>1?'s':''}</strong>${retours.length?` (${retours.map(full).join(', ')})`:''}</div>`:''}
+    ${w.unavailable===0?'<div style="margin-top:10px;font-size:13px;color:var(--alert-ok);font-weight:700;">🟢 Effectif complet disponible</div>':''}
+    ${list('Blessés','blesse','var(--primary)','🔴')}
+    ${list('En réhabilitation','rehabilitation','var(--alert-watch)','🟡')}
+  </div>`;
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function hideWeekTooltip(){
   document.querySelectorAll('#weekAvailTooltip').forEach(el=>el.style.display='none');
@@ -9018,7 +9074,7 @@ function bBlessuresCollectif(allInjuries,roster,catName,fullSeasonInjuries){
               <text x="${px}" y="${py-11}" font-size="12" font-weight="800" fill="var(--text)" text-anchor="middle">${w.pctDisplay}%</text>
               <circle cx="${px}" cy="${py}" r="7" fill="${dotColor}" stroke="#fff" stroke-width="1.5" style="cursor:pointer;"
                 onmouseenter="showWeekTooltip(event,${i})" onmouseleave="hideWeekTooltip()"
-                onclick="showWeekTooltip(event,${i})"></circle>
+                onclick="event.stopPropagation();hideWeekTooltip();showWeekDetail(this,${i})"></circle>
               ${w.isCurrent?`<circle cx="${px+10}" cy="${py-6}" r="3" fill="var(--alert-watch)"><title>Semaine en cours</title></circle>`:''}
               <text x="${px}" y="130" font-size="9" fill="var(--text-muted)" text-anchor="middle">${w.label}</text>
             </g>`;
@@ -9026,7 +9082,8 @@ function bBlessuresCollectif(allInjuries,roster,catName,fullSeasonInjuries){
         </svg>
         <div id="weekAvailTooltip" data-weekly='${JSON.stringify(weeklyAvail).replace(/'/g,"&#39;")}' onclick="hideWeekTooltip()" style="display:none;position:absolute;z-index:50;background:var(--ink);border:1.5px solid var(--primary);border-radius:12px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.5);min-width:200px;max-width:260px;cursor:pointer;"></div>
       </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:6px;">% = (effectif total − blessés − en réhabilitation) / effectif total. Touche/clique un point pour le détail des joueurs. ⚔️ = match cette semaine (nom de l'adversaire). 🟡 = semaine en cours.</div>
+      <div class="week-detail-panel"></div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:6px;">% = (effectif total − blessés − en réhabilitation) / effectif total. Clique / touche un point pour afficher tous les blessés de cette semaine. ⚔️ = match cette semaine (nom de l'adversaire). 🟡 = semaine en cours.</div>
     </div>`:''}
 
     ${!allInjuries.length?`<div class="card" style="padding:20px;margin-bottom:16px;text-align:center;">
