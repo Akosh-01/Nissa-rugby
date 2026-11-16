@@ -7663,6 +7663,10 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
   // Associe chaque blessure à son joueur du roster (nom + génération compatible)
   function findPlayer(x){
     const xGen=parseInt(x.gen)||null;
+    // Identification stricte d'abord (nom + prénom/initiale) : évite d'attribuer la blessure
+    // d'un joueur à un autre qui partage seulement un mot du nom (ex. même prénom).
+    const strict=typeof resolveDbPlayer==='function'?resolveDbPlayer(x.nom):null;
+    if(strict)return roster.find(p=>p.id===strict.id)||null;
     return roster.find(p=>{
       const nameMatches=canonicalNameKey(p.name)===canonicalNameKey(x.nom)||nameWords(x.nom).some(w=>w.length>=3&&nameWords(p.name).includes(w));
       if(!nameMatches)return false;
@@ -7762,10 +7766,21 @@ function showWeekTooltip(evt,idx){
       ${names.map(n=>`<div style="font-size:12px;color:var(--text);padding:2px 0;">${n}</div>`).join('')}
     </div>`;
 
+  // Mouvements par rapport à la semaine précédente : qui est sorti, qui est revenu
+  const prev=weeks[idx-1];
+  const nowOut=new Set(w.unavailableNames||[]), prevOut=new Set(prev?prev.unavailableNames||[]:[]);
+  const nouveaux=prev?[...nowOut].filter(n=>!prevOut.has(n)):[];
+  const retours=prev?[...prevOut].filter(n=>!nowOut.has(n)):[];
+  const moves=prev?`<div style="margin-top:8px;padding:6px 8px;background:var(--surface2);border-radius:6px;font-size:11px;color:var(--text-muted);">
+      vs semaine du ${prev.label} : <strong style="color:var(--primary);">+${nouveaux.length} indispo</strong> · <strong style="color:var(--alert-ok);">${retours.length} retour${retours.length>1?'s':''}</strong>
+      ${nouveaux.length?`<div style="margin-top:4px;">🆕 ${nouveaux.join(', ')}</div>`:''}
+      ${retours.length?`<div style="margin-top:2px;">✅ ${retours.join(', ')}</div>`:''}
+    </div>`:'';
   tt.innerHTML=`
     <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Semaine du ${w.label}</div>
     <div style="font-size:20px;font-weight:800;color:${w.pct>=80?'var(--alert-ok)':w.pct>=60?'var(--alert-watch)':'var(--primary)'};">${w.pctDisplay}% <span style="font-size:11px;font-weight:400;color:var(--text-muted);">disponible</span></div>
     ${w.unavailable===0?`<div style="margin-top:8px;font-size:12px;color:var(--alert-ok);font-weight:700;">🟢 Effectif complet disponible</div>`:''}
+    ${moves}
     ${section('Blessés',w.blessesNames,'var(--primary)','🔴')}
     ${section('En réhabilitation',w.rehabNames,'var(--alert-watch)','🟡')}
     ${w.opponent?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);">⚔️ Match cette semaine : <strong style="color:var(--text);">${w.opponent}</strong></div>`:''}
