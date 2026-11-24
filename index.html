@@ -5306,6 +5306,11 @@ function isRPENameInjured(name,weekStartKey){
   const today=new Date();today.setHours(0,0,0,0);
   const beforeSeasonStart=new Date(SEASON_START_DATE);beforeSeasonStart.setDate(beforeSeasonStart.getDate()-1);
 
+  // A joué un match cette semaine-là (RPE « Match ») → il était disponible : pas exclu des moyennes
+  const pm=typeof matchPlayDatesById==='function'?matchPlayDatesById():null;
+  const wsKey=dateToKey(weekStart),weKey=dateToKey(weekEnd);
+  if(pm&&(pm[p.id]||[]).some(k=>k>=wsKey&&k<=weKey))return false;
+
   const rosterAll=ACTIVE_DB.filter(pl=>inRosterView(pl,cat));
   const myInjuries=(injuriesDB||[]).filter(x=>{
     const xGen=parseInt(x.gen)||null;
@@ -7681,6 +7686,25 @@ function injuryEndDate(x){
   if(x.date&&!isNaN(new Date(x.date))&&r<=new Date(x.date)){const d=new Date(x.date);d.setDate(d.getDate()+1);return d;}
   return r;
 }
+// Dates de match JOUÉES par joueur (id), d'après les RPE « Match » du formulaire.
+// Un joueur qui a rempli un RPE de match a joué : il était donc disponible ce jour-là,
+// même si sa blessure est encore notée « en cours » dans le Sheet blessures.
+let _playedCache={ref:null,map:null};
+function matchPlayDatesById(){
+  if(!Array.isArray(rpeData)||rpeData.length<2)return null;
+  if(_playedCache.ref===rpeData&&_playedCache.db===ACTIVE_DB)return _playedCache.map;
+  const map={};
+  rpeData.slice(1).forEach(r=>{
+    const type=normAccent(String(r[2]||''));
+    if(!type.includes('match')||type.includes('bless'))return;
+    const k=sheetDateToKey(r[0]);if(!k)return;
+    const p=resolveDbPlayer(String(r[1]||'').trim());if(!p)return;
+    (map[p.id]=map[p.id]||new Set()).add(k);
+  });
+  Object.keys(map).forEach(id=>map[id]=[...map[id]].sort());
+  _playedCache={ref:rpeData,db:ACTIVE_DB,map};
+  return map;
+}
 function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catName){
   if(!roster||!roster.length)return[];
   // Toutes les dates ramenées à minuit heure locale (sinon le lundi en cours peut disparaître
@@ -7717,6 +7741,7 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
   // classé comme blessé/en réhabilitation (isInjuryOngoing), pas seulement si le texte exact
   // "arrivé blessé" est présent dans Étape. Le % = (effectif total - blessés - en réhab) / effectif total.
   const rangesByPlayer={};
+  const played_map=matchPlayDatesById();
   let dbgTotal=0,dbgNoDateSkipped=0,dbgNoPlayerMatch=0,dbgBuilt=0;
   allInjuriesForRoster.forEach(x=>{
     dbgTotal++;
@@ -7729,7 +7754,17 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
     // Statut affiché dans l'infobulle : réhab si c'est l'étape actuelle, sinon blessé
     const status=injuryStepStatus(x)==='rehabilitation'?'rehabilitation':'blesse';
     if(!rangesByPlayer[key])rangesByPlayer[key]=[];
-    rangesByPlayer[key].push([d0,d1,status,x]);
+    // Matchs joués pendant la plage de blessure (RPE « Match ») : le joueur était disponible.
+    // → indispo du début jusqu'au 1er match joué ; si la blessure est encore en cours,
+    //   de nouveau indispo seulement APRÈS le dernier match joué (avec le statut actuel).
+    const played=(played_map&&played_map[key]||[]).map(dayOf).filter(d=>d>d0&&d<d1);
+    if(played.length){
+      const first=played[0], last=played[played.length-1];
+      // la semaine du 1er match joué compte comme disponible : fin de plage = lundi de cette semaine
+      const firstWk=dayOf(keyToDate(dateToWeekStart(first)));
+      if(firstWk>d0)rangesByPlayer[key].push([d0,firstWk,isInjuryOngoing(x)?'blesse':status,x,null]);
+      if(isInjuryOngoing(x)){const s=new Date(last);s.setDate(s.getDate()+1);rangesByPlayer[key].push([s,d1,status,x,dateToKey(s)]);}
+    }else rangesByPlayer[key].push([d0,d1,status,x,null]);
     dbgBuilt++;
   });
   window._weeklyAvailDebug={dbgTotal,dbgNoDateSkipped,dbgNoPlayerMatch,dbgBuilt,sample:allInjuriesForRoster.slice(0,3).map(x=>({nom:x.nom,gen:x.gen,date:x.date,etape:x.etape,retour:x.retour,source:x.source}))};
@@ -7759,7 +7794,7 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
         else blessesNames.push(p.name);
         const x=active[3]||{};
         details.push({name:p.name,full:typeof pFullDisplayName==='function'?pFullDisplayName(p):p.name,status:active[2],
-          loc:x.loc||'',type:x.type||'',date:x.date||'',retour:x.retour||'',
+          loc:x.loc||'',type:x.type||'',date:active[4]||x.date||'',retour:x.retour||'',afterPlay:!!active[4],
           days:Math.round((weekStart-active[0])/864e5)});
       }
     });
@@ -7835,6 +7870,7 @@ function showWeekTooltip(evt,idx){
 // Clic sur un point : panneau détaillé sous le graphique (reste affiché jusqu'au prochain clic)
 function showWeekDetail(el,idx){
   const card=el.closest('.card');if(!card)return;
+  if(el.tagName.toLowerCase()!=='circle')el=card.querySelector(`circle[data-wk="${idx}"]`)||el;
   const panel=card.querySelector('.week-detail-panel');
   const tt=card.querySelector('#weekAvailTooltip');
   let weeks;try{weeks=JSON.parse(tt.dataset.weekly);}catch(e){return;}
@@ -8368,6 +8404,11 @@ function importInjuriesExcel(e){
 }
 
 function bBlessures(){
+  // Les RPE « Match » servent à savoir qui a joué (disponibilité) : on les charge en arrière-plan si besoin
+  if(!(Array.isArray(rpeData)&&rpeData.length>1)&&!rpeLoading&&typeof gScriptUrl!=='undefined'&&gScriptUrl&&!window._rpeForInjLoad){
+    window._rpeForInjLoad=true;
+    loadRPEData().then(()=>{if(view==='blessures'&&Array.isArray(rpeData)&&rpeData.length>1)render();}).catch(()=>{});
+  }
   const catName=cat||window._ctxCat||'Alamercery';
   // Roster exact de la catégorie/saison sélectionnée (déjà résolu par le système SEASON_ROSTERS).
   // Un joueur Académie appartient physiquement à Alamercery ou Crabos : il doit apparaître
@@ -9105,15 +9146,17 @@ function bBlessuresCollectif(allInjuries,roster,catName,fullSeasonInjuries){
             return`<g>
               ${w.opponent?`<text x="${px}" y="${py-22}" font-size="8" font-weight="700" fill="var(--primary)" text-anchor="middle">⚔️ ${w.opponent.length>10?w.opponent.slice(0,9)+'…':w.opponent}</text>`:''}
               <text x="${px}" y="${py-11}" font-size="12" font-weight="800" fill="var(--text)" text-anchor="middle">${w.pctDisplay}%</text>
-              <circle cx="${px}" cy="${py}" r="7" fill="${dotColor}" stroke="#fff" stroke-width="1.5" style="cursor:pointer;"
-                onmouseenter="showWeekTooltip(event,${i})" onmouseleave="hideWeekTooltip()"
-                onclick="event.stopPropagation();hideWeekTooltip();showWeekDetail(this,${i})"></circle>
-              ${w.isCurrent?`<circle cx="${px+10}" cy="${py-6}" r="3" fill="var(--alert-watch)"><title>Semaine en cours</title></circle>`:''}
+              <circle data-wk="${i}" cx="${px}" cy="${py}" r="7" fill="${dotColor}" stroke="#fff" stroke-width="1.5"></circle>
+              ${w.isCurrent?`<circle cx="${px+10}" cy="${py-6}" r="3" fill="var(--alert-watch)"></circle>`:''}
               <text x="${px}" y="130" font-size="9" fill="var(--text-muted)" text-anchor="middle">${w.label}</text>
+              <!-- zone cliquable = toute la colonne de la semaine (point, chiffre, adversaire, date) -->
+              <rect x="${px-40}" y="0" width="80" height="150" fill="transparent" style="cursor:pointer;"
+                onmouseenter="showWeekTooltip(event,${i})" onmouseleave="hideWeekTooltip()"
+                onclick="event.stopPropagation();hideWeekTooltip();showWeekDetail(this,${i})"></rect>
             </g>`;
           }).join('')}
         </svg>
-        <div id="weekAvailTooltip" data-weekly='${JSON.stringify(weeklyAvail).replace(/'/g,"&#39;")}' onclick="hideWeekTooltip()" style="display:none;position:absolute;z-index:50;background:var(--ink);border:1.5px solid var(--primary);border-radius:12px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.5);min-width:200px;max-width:260px;cursor:pointer;"></div>
+        <div id="weekAvailTooltip" data-weekly='${JSON.stringify(weeklyAvail).replace(/'/g,"&#39;")}' style="pointer-events:none;display:none;position:absolute;z-index:50;background:var(--ink);border:1.5px solid var(--primary);border-radius:12px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.5);min-width:200px;max-width:260px;cursor:pointer;"></div>
       </div>
       <div class="week-detail-panel"></div>
       <div style="font-size:10px;color:var(--text-muted);margin-top:6px;">% = (effectif total − blessés − en réhabilitation) / effectif total. Clique / touche un point pour afficher tous les blessés de cette semaine. ⚔️ = match cette semaine (nom de l'adversaire). 🟡 = semaine en cours.</div>
