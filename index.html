@@ -4860,14 +4860,16 @@ function computeWeeklyLoads(){
     if(isExcludedThatWeek(name,wk)) return;
     const dur=getDur(k,type,name); // durée individuelle si définie, sinon durée de la séance
     const srpe=rpe*dur;
-    if(!weeks[wk]) weeks[wk]={srpeSum:0,count:0,players:new Set(),hasDur:false};
+    if(!weeks[wk]) weeks[wk]={srpeSum:0,count:0,players:new Set(),hasDur:false,perPlayer:{}};
     weeks[wk].srpeSum+=srpe;
+    weeks[wk].perPlayer[name]=(weeks[wk].perPlayer[name]||0)+srpe;
     weeks[wk].count++;
     weeks[wk].players.add(name);
     if(dur>0) weeks[wk].hasDur=true;
   });
   return Object.entries(weeks).sort((a,b)=>a[0].localeCompare(b[0])).map(([wk,v])=>({
     wk, avg:v.count?Math.round(v.srpeSum/v.players.size):0,
+    med:v.count?Math.round(medianOf(Object.values(v.perPlayer))):0,
     total:Math.round(v.srpeSum), sessions:v.count, players:v.players.size, hasDur:v.hasDur,
     ...weekLabel(wk)
   }));
@@ -5311,6 +5313,14 @@ function isRPENameInjured(name,weekStartKey){
   });
 }
 
+// Médiane (valeur du milieu) : moins sensible qu'une moyenne aux quelques valeurs extrêmes
+function medianOf(arr){
+  const v=(arr||[]).filter(x=>typeof x==='number'&&!isNaN(x)).sort((a,b)=>a-b);
+  if(!v.length)return null;
+  const m=Math.floor(v.length/2);
+  return v.length%2?v[m]:(v[m-1]+v[m])/2;
+}
+const fmtMed=(v,d=1)=>v==null?'—':(d?(Math.round(v*10)/10).toFixed(1):String(Math.round(v)));
 function computeRPEReport(){
   if(!rpeData||!Array.isArray(rpeData)||rpeData.length<2) return null;
   // Le Google Sheet RPE est partagé entre toutes les équipes (Alamercery/Crabos/Académie) : il faut
@@ -5354,8 +5364,8 @@ function computeRPEReport(){
     if(!playerWeekLoad[name]) playerWeekLoad[name]=0;
     playerWeekLoad[name]+=rpe*dur;
     const sk=k+'_'+type;
-    if(!sessions[sk]) sessions[sk]={date:k,type,rpeSum:0,count:0};
-    sessions[sk].rpeSum+=rpe; sessions[sk].count++;
+    if(!sessions[sk]) sessions[sk]={date:k,type,rpeSum:0,count:0,vals:[]};
+    sessions[sk].rpeSum+=rpe; sessions[sk].count++; sessions[sk].vals.push(rpe);
     if(!playerSessions[name])playerSessions[name]={};
     playerSessions[name][sk]={date:k,type,rpeSum:rpe,count:1};
   });
@@ -5368,6 +5378,7 @@ function computeRPEReport(){
   const excludedNames=new Set(Object.keys(playerWeekLoad).filter(n=>isManuallyExcludedRPE(n,wStart)));
   const aptesLoads=Object.entries(playerWeekLoad).filter(([n])=>!injuredNames.has(n)&&!excludedNames.has(n)).map(([,v])=>v);
   const avgWeekLoad=aptesLoads.length?Math.round(aptesLoads.reduce((a,b)=>a+b,0)/aptesLoads.length):0;
+  const medWeekLoad=aptesLoads.length?Math.round(medianOf(aptesLoads)):0;
 
   // Saison : dédupliquer aussi
   const dedupedAll={};
@@ -5411,8 +5422,9 @@ function computeRPEReport(){
   const excludedNamesPrev=new Set(Object.keys(playerPrevWeekLoad).filter(n=>isManuallyExcludedRPE(n,prevStart)));
   const aptesPrevLoads=Object.entries(playerPrevWeekLoad).filter(([n])=>!injuredNamesPrev.has(n)&&!excludedNamesPrev.has(n)).map(([,v])=>v);
   const avgPrevWeekLoad=aptesPrevLoads.length?Math.round(aptesPrevLoads.reduce((a,b)=>a+b,0)/aptesPrevLoads.length):0;
+  const medPrevWeekLoad=aptesPrevLoads.length?Math.round(medianOf(aptesPrevLoads)):0;
 
-  return{avgWeekLoad,avgPrevWeekLoad,injuredNames,excludedNames,sessions,playerSessions,playerSeason,playerWeekLoad,playerPrevWeekLoad,weeklyLoads:computeWeeklyLoads(),wStart,wEndKey};
+  return{avgWeekLoad,avgPrevWeekLoad,medWeekLoad,medPrevWeekLoad,injuredNames,excludedNames,sessions,playerSessions,playerSeason,playerWeekLoad,playerPrevWeekLoad,weeklyLoads:computeWeeklyLoads(),wStart,wEndKey};
 }
 
 function changeReportWeek(delta){
@@ -5538,7 +5550,7 @@ function svgWeekRPE(sessions, filterTypes=null){
     .filter(s=>!filterTypes||filterTypes.size===0||filterTypes.has(s.type))
     .sort((a,b)=>a.date.localeCompare(b.date)||a.type.localeCompare(b.type));
   if(!sorted.length) return`<div style="color:var(--text-muted);text-align:center;padding:16px;font-size:12px;">Aucune séance cette semaine.</div>`;
-  const W=340,H=120,PL=22,PR=6,PT=18,PB=42;
+  const W=340,H=126,PL=22,PR=6,PT=18,PB=46;
   const n=sorted.length;
   const cW=(W-PL-PR)/n;
   const bW=Math.max(10,Math.min(26,cW-5));
@@ -5548,6 +5560,7 @@ function svgWeekRPE(sessions, filterTypes=null){
   const bH=(v)=>Math.max(2,Math.round(v*yS));
   const bars=sorted.map((s,i)=>{
     const avg=s.rpeSum/s.count;
+    const med=s.vals&&s.vals.length?medianOf(s.vals):null;
     const d=keyToDate(s.date);
     const jour=JOURS[d.getDay()];
     const typS=typeShort(s.type);
@@ -5557,7 +5570,10 @@ function svgWeekRPE(sessions, filterTypes=null){
     <rect x="${bx}" y="${by}" width="${bW}" height="${bH(avg)}" rx="3" fill="${col}"/>
     <text x="${bx+bW/2}" y="${by-3}" text-anchor="middle" font-size="8" font-weight="700" fill="#fff">${avg.toFixed(1)}</text>
     <text x="${bx+bW/2}" y="${H-PB+11}" text-anchor="middle" font-size="8" font-weight="700" fill="#ccc">${jour}</text>
-    <text x="${bx+bW/2}" y="${H-PB+21}" text-anchor="middle" font-size="7.5" fill="${col}">${typS}</text>`;
+    <text x="${bx+bW/2}" y="${H-PB+21}" text-anchor="middle" font-size="7.5" fill="${col}">${typS}</text>
+    ${med!=null&&s.count>1?`<line x1="${bx-2}" y1="${H-PB-bH(med)}" x2="${bx+bW+2}" y2="${H-PB-bH(med)}" stroke="#fff" stroke-width="1.6" stroke-dasharray="3,1.5"/>`:''}
+    ${cW>=34&&med!=null&&s.count>1?`<text x="${bx+bW/2}" y="${H-PB+31}" text-anchor="middle" font-size="7" fill="#999">méd ${fmtMed(med)}</text>`:''}
+    <rect x="${bx-2}" y="${PT-6}" width="${bW+4}" height="${H-PB-PT+6}" fill="transparent"><title>${jour} · ${s.type} — moyenne ${avg.toFixed(1)} · médiane ${fmtMed(med)} · ${s.count} réponse${s.count>1?'s':''}</title></rect>`;
   }).join('');
   const yLines=[0,2,4,6,8,10].map(v=>`
     <line x1="${PL}" y1="${H-PB-bH(v)}" x2="${W-PR}" y2="${H-PB-bH(v)}" stroke="#1e1e1e" stroke-width="1"/>
@@ -5566,7 +5582,8 @@ function svgWeekRPE(sessions, filterTypes=null){
     ${yLines}
     <line x1="${PL}" y1="${H-PB}" x2="${W-PR}" y2="${H-PB}" stroke="#333"/>
     ${bars}
-  </svg>`;
+  </svg>
+  ${sorted.some(s=>s.count>1)?`<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Chiffre = RPE moyen · trait blanc pointillé = RPE médian${cW<34?' (survole / touche une barre pour la valeur)':''}</div>`:''}`;
 }
 
 function svgBarWeekly(weeklyLoads){
@@ -5586,6 +5603,7 @@ function svgBarWeekly(weeklyLoads){
     const px=x(i),py=y(w.avg);
     return`<g>
       ${w.avg>0?`<text x="${px}" y="${py-14}" text-anchor="middle" font-size="12" font-weight="800" fill="${isCurrentWeek?'#fff':'#ccc'}">${Math.round(w.avg)}</text>`:''}
+      ${w.med?`<path d="M${px+13} ${y(w.med)-5} l5 5 l-5 5 l-5 -5 z" fill="none" stroke="#fff" stroke-width="1.5"/><text x="${px+21}" y="${y(w.med)+3}" font-size="9" fill="#999">${w.med}</text>`:''}
       <circle cx="${px}" cy="${py}" r="${isCurrentWeek?8:6}" fill="${col(w.avg)}" stroke="#fff" stroke-width="${isCurrentWeek?2:1.2}"/>
       <text x="${px}" y="${H-PB+16}" text-anchor="middle" font-size="10" font-weight="${isCurrentWeek?'700':'400'}" fill="${isCurrentWeek?'#cc0000':'#777'}">${w.label}</text>
     </g>`;
@@ -5600,7 +5618,8 @@ function svgBarWeekly(weeklyLoads){
       ${polyline}
       ${points}
     </svg>
-  </div>`;
+  </div>
+  <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">● chiffre au-dessus = charge moyenne · ◇ à droite = charge médiane (UA)</div>`;
 }
 
 function svgBarPlayers(playerData){
@@ -6149,7 +6168,7 @@ function renderRPEFilterBtns(){
 
 // Visuel combiné "SEMAINE X" : grosses boîtes de comparaison sem. précédente / sem. actuelle
 // + pourcentage d'évolution + courbe de tendance complète, dans l'esprit du visuel de référence.
-function svgWeekComparisonBanner(avgPrevWeekLoad,avgWeekLoad,weeklyLoads,weekNum){
+function svgWeekComparisonBanner(avgPrevWeekLoad,avgWeekLoad,weeklyLoads,weekNum,medPrev,medCur){
   const delta=avgPrevWeekLoad?Math.round(((avgWeekLoad-avgPrevWeekLoad)/avgPrevWeekLoad)*100):null;
   const deltaColor=delta===null?'var(--text-muted)':delta>10?'var(--primary)':delta<-10?'var(--alert-ok)':'var(--alert-watch)';
   const deltaIcon=delta===null?'':delta>0?'▲':delta<0?'▼':'●';
@@ -6168,6 +6187,7 @@ function svgWeekComparisonBanner(avgPrevWeekLoad,avgWeekLoad,weeklyLoads,weekNum
       <div style="text-align:center;">
         <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Semaine précédente</div>
         <div style="background:#000;border-radius:12px;padding:16px 8px;font-size:26px;font-weight:800;color:#fff;">${avgPrevWeekLoad||'—'}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">moyenne · <strong style="color:var(--text);">médiane ${medPrev||'—'}</strong></div>
       </div>
       <div style="text-align:center;padding:0 4px;">
         ${delta!==null?`<div style="font-size:13px;font-weight:800;color:${deltaColor};margin-bottom:4px;">${deltaIcon} ${delta>0?'+':''}${delta}%</div>`:''}
@@ -6176,6 +6196,7 @@ function svgWeekComparisonBanner(avgPrevWeekLoad,avgWeekLoad,weeklyLoads,weekNum
       <div style="text-align:center;">
         <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Semaine actuelle</div>
         <div style="background:var(--primary);border-radius:12px;padding:16px 8px;font-size:26px;font-weight:800;color:#fff;">${avgWeekLoad||'—'}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">moyenne · <strong style="color:var(--text);">médiane ${medCur||'—'}</strong></div>
       </div>
     </div>
     ${svgBarWeekly(weeklyLoads)}
@@ -6199,7 +6220,7 @@ function bRPEReport(){
       ${weekNavHeader(wStart,'rpereport')}
     </div>
     <div style="background:var(--surface2);border-radius:12px;border:1px solid var(--border);padding:16px;margin-bottom:10px;">
-      ${svgWeekComparisonBanner(avgPrevWeekLoad,avgWeekLoad,weeklyLoads,weekNum)}
+      ${svgWeekComparisonBanner(avgPrevWeekLoad,avgWeekLoad,weeklyLoads,weekNum,rep.medPrevWeekLoad,rep.medWeekLoad)}
     </div>
     <div style="background:var(--surface2);border-radius:12px;border:1px solid var(--border);padding:12px;margin-bottom:10px;">
       <div style="font-size:11px;color:#cc0000;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:10px;">⚡ Charge par joueur — sem. précédente vs en cours</div>
@@ -9412,7 +9433,7 @@ function printSvgWeekRPE(sessions){
   const JOURS=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
   const sorted=Object.values(sessions).sort((a,b)=>a.date.localeCompare(b.date)||a.type.localeCompare(b.type));
   if(!sorted.length)return'<div style="color:#999;text-align:center;padding:16px;font-size:12px;">Aucune séance cette semaine.</div>';
-  const W=560,H=150,PL=30,PR=10,PT=20,PB=48;
+  const W=560,H=160,PL=30,PR=10,PT=20,PB=58;
   const n=sorted.length;
   const cW=(W-PL-PR)/n;
   const bW=Math.max(14,Math.min(34,cW-6));
@@ -9423,6 +9444,7 @@ function printSvgWeekRPE(sessions){
   const typeColors={'Musculation':'#4a90d9','Terrain':'#22a559','Match':'#C8102E','Autre':'#999'};
   const bars=sorted.map((s,i)=>{
     const avg=s.rpeSum/s.count;
+    const med=s.vals&&s.vals.length?medianOf(s.vals):null;
     const d=keyToDate(s.date);
     const jour=JOURS[d.getDay()];
     const col=typeColors[s.type]||'#999';
@@ -9430,7 +9452,9 @@ function printSvgWeekRPE(sessions){
     return`<rect x="${bx}" y="${by}" width="${bW}" height="${bH(avg)}" rx="3" fill="${col}"/>
     <text x="${bx+bW/2}" y="${by-4}" text-anchor="middle" font-size="10" font-weight="700" fill="#111">${avg.toFixed(1)}</text>
     <text x="${bx+bW/2}" y="${H-PB+13}" text-anchor="middle" font-size="9" font-weight="700" fill="#444">${jour}</text>
-    <text x="${bx+bW/2}" y="${H-PB+24}" text-anchor="middle" font-size="8" fill="${col}">${s.type}</text>`;
+    <text x="${bx+bW/2}" y="${H-PB+24}" text-anchor="middle" font-size="8" fill="${col}">${s.type}</text>
+    ${med!=null&&s.count>1?`<line x1="${bx-3}" y1="${H-PB-bH(med)}" x2="${bx+bW+3}" y2="${H-PB-bH(med)}" stroke="#111" stroke-width="2" stroke-dasharray="4,2"/>`:''}
+    ${cW>=42&&med!=null&&s.count>1?`<text x="${bx+bW/2}" y="${H-PB+35}" text-anchor="middle" font-size="8" fill="#666">méd ${fmtMed(med)}</text>`:''}`;
   }).join('');
   const yLines=[0,2,4,6,8,10].map(v=>`
     <line x1="${PL}" y1="${H-PB-bH(v)}" x2="${W-PR}" y2="${H-PB-bH(v)}" stroke="#eee" stroke-width="1"/>
@@ -9439,6 +9463,7 @@ function printSvgWeekRPE(sessions){
     ${yLines}
     <line x1="${PL}" y1="${H-PB}" x2="${W-PR}" y2="${H-PB}" stroke="#ccc"/>
     ${bars}
+    ${sorted.some(s=>s.count>1)?`<g><text x="${W-PR-130}" y="10" font-size="8" fill="#666">chiffre = moyenne</text><line x1="${W-PR-46}" y1="7" x2="${W-PR-32}" y2="7" stroke="#111" stroke-width="2" stroke-dasharray="4,2"/><text x="${W-PR-29}" y="10" font-size="8" fill="#666">médiane</text></g>`:''}
   </svg>`;
 }
 
@@ -9474,6 +9499,7 @@ function printSvgWeeklyPoints(weeklyLoads,wStart,catName){
     return`<g>
       ${logos}
       ${w.avg>0?`<text x="${px}" y="${py-13}" text-anchor="middle" font-size="11" font-weight="800" fill="#111">${Math.round(w.avg)}</text>`:''}
+      ${w.med?`<path d="M${px+12} ${y(w.med)-5} l5 5 l-5 5 l-5 -5 z" fill="#fff" stroke="#111" stroke-width="1.5"/><text x="${px+20}" y="${y(w.med)+3}" font-size="8" fill="#555">${w.med}</text>`:''}
       <circle cx="${px}" cy="${py}" r="${isCur?7:5}" fill="${col(w.avg)}" stroke="#fff" stroke-width="${isCur?2:1}"/>
       <text x="${px}" y="${H-PB+15}" text-anchor="middle" font-size="9" font-weight="${isCur?'700':'400'}" fill="${isCur?'#C8102E':'#777'}">${w.label}</text>
     </g>`;
@@ -9486,6 +9512,7 @@ function printSvgWeeklyPoints(weeklyLoads,wStart,catName){
     <line x1="${PL}" y1="${y(v)}" x2="${W-PR}" y2="${y(v)}" stroke="#eee" stroke-width="1"/>
     <text x="${PL-6}" y="${y(v)+3}" text-anchor="end" font-size="9" fill="#999">${v}</text>`).join('');
   return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;">${yLines}${polyline}${points}</svg>`+
+    `<div style="font-size:9px;color:#777;margin-top:2px;">● chiffre au-dessus = charge moyenne · ◇ à droite = charge médiane (UA)</div>`+
     (hasMatch?`<div style="font-size:9px;color:#999;margin-top:2px;">Le logo au-dessus d'un point = adversaire de la semaine de match.</div>`:'');
 }
 
@@ -9953,6 +9980,7 @@ function generateRPETeamReport(weekKey){
       <div class="week-box">
         <div class="l">Semaine précédente</div>
         <div class="v" style="background:#111;">${rep.avgPrevWeekLoad||'—'}</div>
+        <div style="font-size:10px;color:#666;margin-top:4px;">moyenne · <strong style="color:#111;">médiane ${rep.medPrevWeekLoad||'—'}</strong></div>
       </div>
       <div class="week-box">
         ${delta!==null?`<div style="font-size:13px;font-weight:800;color:${deltaColor};">${delta>0?'▲ +':delta<0?'▼ ':'● '}${delta}%</div>`:''}
@@ -9961,6 +9989,7 @@ function generateRPETeamReport(weekKey){
       <div class="week-box">
         <div class="l">Semaine actuelle</div>
         <div class="v" style="background:#C8102E;">${rep.avgWeekLoad||'—'}</div>
+        <div style="font-size:10px;color:#666;margin-top:4px;">moyenne · <strong style="color:#111;">médiane ${rep.medWeekLoad||'—'}</strong></div>
       </div>
     </div>
 
@@ -10026,10 +10055,10 @@ function generateRPETeamReport(weekKey){
     <div class="section-title">RPE par séance — semaine sélectionnée</div>
     ${printSvgWeekRPE(sessionsRapport)}
     <table style="margin-top:10px;">
-      <thead><tr><th>Date</th><th>Type de séance</th><th>RPE moyen</th></tr></thead>
+      <thead><tr><th>Date</th><th>Type de séance</th><th>RPE moyen</th><th>RPE médian</th><th>Réponses</th></tr></thead>
       <tbody>
         ${Object.values(sessionsRapport).sort((a,b)=>a.date.localeCompare(b.date)).map(s=>`
-          <tr><td>${fD(s.date)}</td><td>${s.type}</td><td>${(s.rpeSum/s.count).toFixed(1)}/10</td></tr>
+          <tr><td>${fD(s.date)}</td><td>${s.type}</td><td>${(s.rpeSum/s.count).toFixed(1)}/10</td><td>${s.vals&&s.vals.length?fmtMed(medianOf(s.vals))+'/10':'—'}</td><td>${s.count}</td></tr>
         `).join('')}
       </tbody>
     </table>
