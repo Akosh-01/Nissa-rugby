@@ -2640,10 +2640,14 @@ function bProfile(){
     const last=lat(h);
     const dt=last[0],sc=last[1],rm=last[2];
     const reps=RM_TESTS.includes(name)?testReps(p,name,last):1;
+    // Étiquette de type de charge : celle saisie avec le résultat (5RM, 3RM, 1RM) en priorité,
+    // sinon celle déduite (Squat / DC), et toujours 1RM pour l'épaulé.
+    const mRM=String(rm||'').match(/^(\d)RM$/i);
+    const rmTag=mRM?mRM[1]+'RM':reps>1?reps+'RM':/epaul/i.test(normAccent(name))?'1RM':'';
     return`<div class="test-row tr-grid">
       <span class="tr-name">${name}</span>
       <span class="tr-badges">${ffrBadgesHTML(p,name,34)}</span>
-      <span class="tr-score"><span class="test-score">${tv(sc)}${reps>1?`<sup class="tr-rm">${reps}RM</sup>`:''}</span></span>
+      <span class="tr-score"><span class="test-score">${tv(sc)}${rmTag?`<sup class="tr-rm">${rmTag}</sup>`:''}</span></span>
       <span class="tr-date">${fD(dt)}</span>
       ${canChart(h)
         ?`<button onclick="sC('${name.replace(/'/g,"\\'")}');" class="btn-red tr-btn">📈</button>`
