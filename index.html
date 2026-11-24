@@ -5306,11 +5306,6 @@ function isRPENameInjured(name,weekStartKey){
   const today=new Date();today.setHours(0,0,0,0);
   const beforeSeasonStart=new Date(SEASON_START_DATE);beforeSeasonStart.setDate(beforeSeasonStart.getDate()-1);
 
-  // A joué un match cette semaine-là (RPE « Match ») → il était disponible : pas exclu des moyennes
-  const pm=typeof matchPlayDatesById==='function'?matchPlayDatesById():null;
-  const wsKey=dateToKey(weekStart),weKey=dateToKey(weekEnd);
-  if(pm&&(pm[p.id]||[]).some(k=>k>=wsKey&&k<=weKey))return false;
-
   const rosterAll=ACTIVE_DB.filter(pl=>inRosterView(pl,cat));
   const myInjuries=(injuriesDB||[]).filter(x=>{
     const xGen=parseInt(x.gen)||null;
@@ -7686,25 +7681,6 @@ function injuryEndDate(x){
   if(x.date&&!isNaN(new Date(x.date))&&r<=new Date(x.date)){const d=new Date(x.date);d.setDate(d.getDate()+1);return d;}
   return r;
 }
-// Dates de match JOUÉES par joueur (id), d'après les RPE « Match » du formulaire.
-// Un joueur qui a rempli un RPE de match a joué : il était donc disponible ce jour-là,
-// même si sa blessure est encore notée « en cours » dans le Sheet blessures.
-let _playedCache={ref:null,map:null};
-function matchPlayDatesById(){
-  if(!Array.isArray(rpeData)||rpeData.length<2)return null;
-  if(_playedCache.ref===rpeData&&_playedCache.db===ACTIVE_DB)return _playedCache.map;
-  const map={};
-  rpeData.slice(1).forEach(r=>{
-    const type=normAccent(String(r[2]||''));
-    if(!type.includes('match')||type.includes('bless'))return;
-    const k=sheetDateToKey(r[0]);if(!k)return;
-    const p=resolveDbPlayer(String(r[1]||'').trim());if(!p)return;
-    (map[p.id]=map[p.id]||new Set()).add(k);
-  });
-  Object.keys(map).forEach(id=>map[id]=[...map[id]].sort());
-  _playedCache={ref:rpeData,db:ACTIVE_DB,map};
-  return map;
-}
 function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catName){
   if(!roster||!roster.length)return[];
   // Toutes les dates ramenées à minuit heure locale (sinon le lundi en cours peut disparaître
@@ -7741,7 +7717,6 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
   // classé comme blessé/en réhabilitation (isInjuryOngoing), pas seulement si le texte exact
   // "arrivé blessé" est présent dans Étape. Le % = (effectif total - blessés - en réhab) / effectif total.
   const rangesByPlayer={};
-  const played_map=matchPlayDatesById();
   let dbgTotal=0,dbgNoDateSkipped=0,dbgNoPlayerMatch=0,dbgBuilt=0;
   allInjuriesForRoster.forEach(x=>{
     dbgTotal++;
@@ -7754,17 +7729,7 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
     // Statut affiché dans l'infobulle : réhab si c'est l'étape actuelle, sinon blessé
     const status=injuryStepStatus(x)==='rehabilitation'?'rehabilitation':'blesse';
     if(!rangesByPlayer[key])rangesByPlayer[key]=[];
-    // Matchs joués pendant la plage de blessure (RPE « Match ») : le joueur était disponible.
-    // → indispo du début jusqu'au 1er match joué ; si la blessure est encore en cours,
-    //   de nouveau indispo seulement APRÈS le dernier match joué (avec le statut actuel).
-    const played=(played_map&&played_map[key]||[]).map(dayOf).filter(d=>d>d0&&d<d1);
-    if(played.length){
-      const first=played[0], last=played[played.length-1];
-      // la semaine du 1er match joué compte comme disponible : fin de plage = lundi de cette semaine
-      const firstWk=dayOf(keyToDate(dateToWeekStart(first)));
-      if(firstWk>d0)rangesByPlayer[key].push([d0,firstWk,isInjuryOngoing(x)?'blesse':status,x,null]);
-      if(isInjuryOngoing(x)){const s=new Date(last);s.setDate(s.getDate()+1);rangesByPlayer[key].push([s,d1,status,x,dateToKey(s)]);}
-    }else rangesByPlayer[key].push([d0,d1,status,x,null]);
+    rangesByPlayer[key].push([d0,d1,status,x]);
     dbgBuilt++;
   });
   window._weeklyAvailDebug={dbgTotal,dbgNoDateSkipped,dbgNoPlayerMatch,dbgBuilt,sample:allInjuriesForRoster.slice(0,3).map(x=>({nom:x.nom,gen:x.gen,date:x.date,etape:x.etape,retour:x.retour,source:x.source}))};
@@ -7794,7 +7759,7 @@ function computeWeeklyAvailability(roster,allInjuriesForRoster,startDateStr,catN
         else blessesNames.push(p.name);
         const x=active[3]||{};
         details.push({name:p.name,full:typeof pFullDisplayName==='function'?pFullDisplayName(p):p.name,status:active[2],
-          loc:x.loc||'',type:x.type||'',date:active[4]||x.date||'',retour:x.retour||'',afterPlay:!!active[4],
+          loc:x.loc||'',type:x.type||'',date:x.date||'',retour:x.retour||'',
           days:Math.round((weekStart-active[0])/864e5)});
       }
     });
@@ -8404,11 +8369,6 @@ function importInjuriesExcel(e){
 }
 
 function bBlessures(){
-  // Les RPE « Match » servent à savoir qui a joué (disponibilité) : on les charge en arrière-plan si besoin
-  if(!(Array.isArray(rpeData)&&rpeData.length>1)&&!rpeLoading&&typeof gScriptUrl!=='undefined'&&gScriptUrl&&!window._rpeForInjLoad){
-    window._rpeForInjLoad=true;
-    loadRPEData().then(()=>{if(view==='blessures'&&Array.isArray(rpeData)&&rpeData.length>1)render();}).catch(()=>{});
-  }
   const catName=cat||window._ctxCat||'Alamercery';
   // Roster exact de la catégorie/saison sélectionnée (déjà résolu par le système SEASON_ROSTERS).
   // Un joueur Académie appartient physiquement à Alamercery ou Crabos : il doit apparaître
